@@ -50,7 +50,7 @@ export function parseFrontmatter(content: string): Record<string, any> {
     if (colonIdx <= 0) continue;
 
     const key = trimmed.slice(0, colonIdx).trim();
-    let value: any = trimmed.slice(colonIdx + 1).trim();
+    let value: string = trimmed.slice(colonIdx + 1).trim();
 
     if ((value.startsWith('"') && value.endsWith('"')) ||
       (value.startsWith("'") && value.endsWith("'"))) {

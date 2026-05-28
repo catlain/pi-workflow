@@ -9,6 +9,7 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { SessionEntry, CustomEntry } from "@earendil-works/pi-coding-agent";
 
 // ============================================================
 // StateManager
@@ -60,11 +61,11 @@ export function createStateManager<T>(options: {
 		restore(ctx: ExtensionContext): void {
 			const entries = ctx.sessionManager.getEntries();
 			const matching = entries.filter(
-				(e: any) => e.type === "custom" && e.customType === entryType,
+				(e: SessionEntry): e is CustomEntry => e.type === "custom" && (e as CustomEntry).customType === entryType,
 			);
 			if (matching.length === 0) return;
 			const latest = matching[matching.length - 1];
-			const data = (latest as any).data;
+			const data = (latest as CustomEntry).data;
 			if (data === null || data === undefined || typeof data !== "object" || Array.isArray(data)) {
 				state = structuredClone(initialSnapshot);
 				return;
@@ -91,7 +92,7 @@ export interface UIUpdater<T> {
  * @param options.statusKey  ctx.ui.setStatus/setWidget 的 key
  * @param options.phases     每个阶段的 UI 配置。value 用字符串匹配 state.phase。
  */
-export function createUIUpdater<T>(options: {
+export function createUIUpdater<T extends { phase?: string }>(options: {
 	statusKey: string;
 	phases: Array<{
 		value: string;
@@ -102,7 +103,7 @@ export function createUIUpdater<T>(options: {
 }): UIUpdater<T> {
 	return {
 		update(ctx: ExtensionContext, state: T): void {
-			const phase = (state as any).phase as string;
+			const phase = state.phase;
 			const pc = options.phases.find(p => p.value === phase);
 			if (pc && pc.icon) {
 				ctx.ui.setStatus(options.statusKey, `${pc.icon} ${pc.label}`);

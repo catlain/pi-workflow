@@ -13,15 +13,15 @@ import type { ExtensionAPI, ExtensionContext, AgentToolResult } from "@earendil-
 import { Type } from "typebox";
 import type { StateManager, UIUpdater } from "./state";
 
-export interface ActionDef<T> {
+export interface ActionDef<T, TParams = Record<string, unknown>, TDetails = Record<string, unknown>> {
 	description: string;
 	handler: (
-		params: any,
+		params: TParams,
 		state: T,
 		ctx: ExtensionContext,
 		signal?: AbortSignal,
-		onUpdate?: any,
-	) => Promise<AgentToolResult<any>>;
+		onUpdate?: (update: AgentToolResult<TDetails>) => void,
+	) => Promise<AgentToolResult<TDetails>>;
 	/** 可选的前置门控。返回 {pass:false, reason} 阻止 handler 执行 */
 	gate?: (state: T) => { pass: boolean; reason?: string };
 }
@@ -63,11 +63,11 @@ export function registerWorkflowTool<T>(pi: ExtensionAPI, options: {
 
 		async execute(
 			_tcId: string,
-			params: any,
+			params: Record<string, unknown>,
 			signal: AbortSignal | undefined,
-			onUpdate: any,
+			onUpdate: ((update: AgentToolResult<Record<string, unknown>>) => void) | undefined,
 			ctx: ExtensionContext,
-		): Promise<AgentToolResult<any>> {
+		): Promise<AgentToolResult<Record<string, unknown>>> {
 			const { action, ...actionParams } = params;
 			const actionDef = options.actions[action as string];
 
@@ -93,11 +93,11 @@ export function registerWorkflowTool<T>(pi: ExtensionAPI, options: {
 
 			try {
 				const result = await actionDef.handler(
-					actionParams,
+					actionParams as Record<string, unknown>,
 					options.stateManager.get(),
 					ctx,
 					signal,
-					onUpdate,
+					onUpdate as ((update: AgentToolResult<Record<string, unknown>>) => void) | undefined,
 				);
 				options.stateManager.persist(ctx);
 				options.uiUpdater.update(ctx, options.stateManager.get());

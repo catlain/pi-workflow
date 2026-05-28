@@ -11,6 +11,12 @@ import * as os from "node:os";
 import type { SubagentResult, SubagentEvent } from "./types";
 import { spawnOnce } from "./subagent-spawn-once";
 
+/** pi JSON 模式中的消息结构 */
+interface PiMessage {
+	role?: string;
+	content?: Array<{ type: string; text?: string }>;
+}
+
 /** 关闭 tmux 窗格 */
 function closeTmuxPane(paneId: string): void {
 	if (!/^%\d+$/.test(paneId)) return;
@@ -67,7 +73,7 @@ export function spawnVisible(
 	let allTexts: string[] = [];
 	let capturedSessionId: string | undefined;
 
-	const collectTexts = (message: any) => {
+	const collectTexts = (message: PiMessage) => {
 		if (message?.role !== "assistant") return;
 		for (const part of message.content ?? []) {
 			if (part.type === "text" && part.text.trim()) {

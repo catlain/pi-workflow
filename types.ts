@@ -18,7 +18,7 @@ export interface SubagentResult {
 export interface SubagentEvent {
 	type: "tool" | "thinking" | "message";
 	toolName?: string;
-	toolArgs?: any;
+	toolArgs?: Record<string, unknown>;
 	text?: string;
-	message?: any;
+	message?: unknown;
 }

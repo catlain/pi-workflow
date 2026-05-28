@@ -8,6 +8,23 @@ import { spawn, execSync } from "node:child_process";
 import type { SubagentResult, SubagentEvent } from "./types";
 import { getPiCommand } from "./subagent-utils";
 
+/** pi JSON 模式输出的事件行 */
+interface PiJsonEvent {
+	type: string;
+	id?: string;
+	toolName?: string;
+	args?: Record<string, unknown>;
+	assistantMessageEvent?: { type: string; delta?: string };
+	message?: PiMessage;
+	messages?: PiMessage[];
+}
+
+/** pi JSON 模式中的消息结构 */
+interface PiMessage {
+	role?: string;
+	content?: Array<{ type: string; text?: string }>;
+}
+
 export function spawnOnce(
 	task: string,
 	cwd: string,
@@ -42,7 +59,7 @@ export function spawnOnce(
 		let capturedSessionId: string | undefined;
 		const sessionIdRegex = /\{"type":"session","version":\d+,"id":"([^"]+)"/;
 
-		const collectAssistantTexts = (message: any) => {
+		const collectAssistantTexts = (message: PiMessage) => {
 			if (message?.role !== "assistant") return;
 			for (const part of message.content ?? []) {
 				if (part.type === "text" && part.text.trim()) {
@@ -51,7 +68,7 @@ export function spawnOnce(
 			}
 		};
 
-		const handleEvent = (event: any) => {
+		const handleEvent = (event: PiJsonEvent) => {
 			if (event.type === "session" && event.id && !capturedSessionId) capturedSessionId = event.id;
 			if (event.type === "tool_execution_start") onEvent?.({ type: "tool", toolName: event.toolName, toolArgs: event.args });
 			if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") onEvent?.({ type: "thinking", text: event.assistantMessageEvent.delta });
