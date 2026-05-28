@@ -6,5 +6,9 @@ export default defineConfig({
 	test: {
 		include: ["tests/**/*.test.ts"],
 		exclude: ["**/*.subagent.test.ts"],
+		coverage: {
+			provider: "v8" as const,
+			reporter: ["text", "html"],
+		},
 	},
 });
