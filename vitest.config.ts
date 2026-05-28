@@ -9,6 +9,13 @@ export default defineConfig({
 		coverage: {
 			provider: "v8" as const,
 			reporter: ["text", "html"],
+			exclude: [
+				"types.ts",
+				"research-types.ts",
+				"index.ts",
+				"vitest.config.*",
+				"tests/**",
+			],
 		},
 	},
 });
