@@ -1,5 +1,5 @@
 {
-  "name": "pi-workflow",
+  "name": "pi-ate-workflow",
   "version": "0.1.0",
   "type": "commonjs",
   "main": "index.ts",
@@ -34,5 +34,17 @@
     "tsconfig.json",
     "vitest.config.ts",
     "package.json"
-  ]
+  ],
+  "keywords": [
+    "pi-package"
+  ],
+  "homepage": "https://catlain.github.io/pi-atelier/",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com:catlain/pi-workflow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/catlain/pi-workflow/issues"
+  },
+  "license": "MIT"
 }
