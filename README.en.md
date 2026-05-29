@@ -2,6 +2,8 @@
 
 # pi-workflow
 
+[Source Code](https://github.com/catlain/pi-workflow) | [npm](https://www.npmjs.com/package/pi-ate-workflow)
+
 Workflow orchestration extension for [pi](https://github.com/earendil-works/pi-coding-agent) — subagent spawning, research workflow, and output capture.
 
 ## Why You Need It
