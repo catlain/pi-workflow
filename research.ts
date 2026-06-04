@@ -11,42 +11,43 @@
  */
 
 export type {
-  Article,
-  ArticleAnalysis as ArticleAnalysisType,
-  Direction,
-  TopicResearchState,
+	Article,
+	ArticleAnalysis as ArticleAnalysisType,
+	Direction,
+	TopicResearchState,
 } from "./research-types";
 
 export {
-  slugify,
-  urlToId,
-  parseFrontmatter,
-  getTimestamp,
-  getResearchDir,
-  getDirectionsDir,
-  getTopicDir,
+	slugify,
+	urlToId,
+	parseFrontmatter,
+	getTimestamp,
+	getResearchDir,
+	getDirectionsDir,
+	getTopicDir,
 } from "./research-utils";
 
 export {
-  loadCatalog,
-  saveCatalog,
+	loadCatalog,
+	saveCatalog,
 } from "./research-catalog";
 
 export {
-  loadTopicState,
-  saveTopicState,
-  loadDirectionState,
-  saveDirectionState,
+	loadTopicState,
+	saveTopicState,
+	loadDirectionState,
+	saveDirectionState,
 } from "./research-state";
 
 export {
-  loadAnalysis,
-  saveAnalysis,
-  defaultAnalysis,
-  type ArticleAnalysis,
-  type AnalysisState,
+	loadAnalysis,
+	saveAnalysis,
+	defaultAnalysis,
+	type ArticleAnalysis,
+	type AnalysisState,
 } from "./research-analysis";
 
 export {
-  scanNewSources,
+	scanNewSources,
+	scanTopicArticles,
 } from "./research-scan";

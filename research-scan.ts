@@ -17,49 +17,97 @@ import { parseFrontmatter, urlToId, getResearchDir } from "./research-utils";
  * @param existingIds 已有文章 id 列表（去重用）
  */
 export function scanNewSources(cwd: string, existingIds: string[]): Article[] {
-  const sourcesDir = path.join(getResearchDir(cwd), "sources");
-  if (!fs.existsSync(sourcesDir)) return [];
+	const sourcesDir = path.join(getResearchDir(cwd), "sources");
+	if (!fs.existsSync(sourcesDir)) return [];
 
-  const existingIdSet = new Set(existingIds);
-  const newArticles: Article[] = [];
+	const existingIdSet = new Set(existingIds);
+	const newArticles: Article[] = [];
 
-  const sourceNames = fs.readdirSync(sourcesDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name);
+	const sourceNames = fs.readdirSync(sourcesDir, { withFileTypes: true })
+		.filter((d) => d.isDirectory())
+		.map((d) => d.name);
 
-  for (const sourceName of sourceNames) {
-    const sourcePath = path.join(sourcesDir, sourceName);
-    const files = fs.readdirSync(sourcePath)
-      .filter((f) => f.endsWith("_article.md"));
+	for (const sourceName of sourceNames) {
+		const sourcePath = path.join(sourcesDir, sourceName);
+		const files = fs.readdirSync(sourcePath)
+			.filter((f) => f.endsWith("_article.md"));
 
-    for (const file of files) {
-      const filePath = path.join(sourcePath, file);
-      try {
-        const content = fs.readFileSync(filePath, "utf-8");
-        const fm = parseFrontmatter(content);
-        const url = fm.url || "";
+		for (const file of files) {
+			const filePath = path.join(sourcePath, file);
+			try {
+				const content = fs.readFileSync(filePath, "utf-8");
+				const fm = parseFrontmatter(content);
+				const url = fm.url || "";
 
-        if (!url) continue;
+				if (!url) continue;
 
-        const id = urlToId(url);
-        if (id && existingIdSet.has(id)) continue;
+				const id = urlToId(url);
+				if (id && existingIdSet.has(id)) continue;
 
-        newArticles.push({
-          id,
-          url,
-          title: fm.title || file.replace(/\.md$/, "").replace(/_article$/, ""),
-          source_type: fm.source_type || "other",
-          found_at: fm.found_at || new Date().toISOString(),
-          score: typeof fm.score === "number" ? fm.score : 5,
-          dir: `sources/${sourceName}/`,
-          file,
-        });
-        if (id) existingIdSet.add(id);
-      } catch {
-        continue;
-      }
-    }
-  }
+				newArticles.push({
+				  id,
+				  url,
+				  title: fm.title || file.replace(/\.md$/, "").replace(/_article$/, ""),
+				  source_type: fm.source_type || "other",
+				  found_at: fm.found_at || new Date().toISOString(),
+				  score: typeof fm.score === "number" ? fm.score : 5,
+				  dir: `sources/${sourceName}/`,
+				  file,
+				});
+				if (id) existingIdSet.add(id);
+			} catch {
+				continue;
+			}
+		}
+	}
 
-  return newArticles;
+	return newArticles;
+}
+
+/**
+ * 扫描 topics/{slug}/articles/ 扁平目录，返回不在 existingIds 中的新文章。
+ *
+ * @param cwd 项目根目录
+ * @param slug 主题 slug
+ * @param existingIds 已有文章 id 列表（去重用）
+ */
+export function scanTopicArticles(cwd: string, slug: string, existingIds: string[]): Article[] {
+	const articlesDir = path.join(cwd, "docs", "research", "topics", slug, "articles");
+	if (!fs.existsSync(articlesDir)) return [];
+
+	const existingIdSet = new Set(existingIds);
+	const newArticles: Article[] = [];
+
+	const files = fs.readdirSync(articlesDir)
+		.filter((f) => f.endsWith("_article.md"));
+
+	for (const file of files) {
+		const filePath = path.join(articlesDir, file);
+		try {
+			const content = fs.readFileSync(filePath, "utf-8");
+			const fm = parseFrontmatter(content);
+			const url = fm.url || "";
+
+			if (!url) continue;
+
+			const id = urlToId(url);
+			if (id && existingIdSet.has(id)) continue;
+
+			newArticles.push({
+				id,
+				url,
+				title: fm.title || file.replace(/\.md$/, "").replace(/_article$/, ""),
+				source_type: fm.source_type || "other",
+				found_at: fm.found_at || new Date().toISOString(),
+				score: typeof fm.score === "number" ? fm.score : 5,
+				dir: "articles/",
+				file,
+			});
+			if (id) existingIdSet.add(id);
+		} catch {
+			continue;
+		}
+	}
+
+	return newArticles;
 }

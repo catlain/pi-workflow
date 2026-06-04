@@ -7,10 +7,18 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { SubagentResult, SubagentEvent } from "./types";
-import { writeTempPrompt } from "./subagent-utils";
+import { writeTempPrompt, findAndInjectParentSession } from "./subagent-utils";
 import { loadAgentDef } from "./agent-loader";
 import { spawnOnce } from "./subagent-spawn-once";
 import { spawnVisible } from "./subagent-spawn-visible";
+
+/** 模块级 session 文件解析器，由各扩展在 session_start 时注册 */
+let _sessionFileResolver: (() => string | undefined) | undefined;
+
+/** 各扩展在 session_start hook 中调用，注册当前会话文件路径的获取方式 */
+export function setSessionFileResolver(resolver: (() => string | undefined) | undefined) {
+	_sessionFileResolver = resolver;
+}
 
 /** 格式约束，拼入 task 让子代理自检，执行后验证 */
 export interface OutputConstraint {
@@ -59,6 +67,9 @@ export async function runSubagent(
 		throw new Error(`子代理定义 "${agentName}" 未找到。请确保 ~/.pi/agent/agents/${agentName}.md 文件存在。`);
 	}
 
+	// 自动解析当前会话文件路径，用于建立 parentSession 关联
+	const parentSessionPath = _sessionFileResolver?.();
+
 	const useVisible = visible && !!process.env.TMUX;
 
 	const tmpPromptPath = await writeTempPrompt(agentDef.systemPrompt);
@@ -75,9 +86,14 @@ export async function runSubagent(
 				: `${fullTask}\n\n---\n\n⚠️ 你上一轮的输出不符合格式约束：\n${validateOutputConstraints(lastResult!.output, outputConstraints!).join("\n")}\n\n请修正格式后重新输出完整的审查结果。不要重复工具调用，直接输出修正后的文本。`;
 
 			const result = useVisible
-				? await spawnVisible(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent)
-				: await spawnOnce(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent);
+				? await spawnVisible(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent, parentSessionPath)
+				: await spawnOnce(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent, parentSessionPath);
 			lastResult = result;
+
+			// 后台模式：子进程退出后通过 sessionId 查找 session 文件并注入 parentSession
+			if (!useVisible && parentSessionPath && result.subSessionId) {
+				findAndInjectParentSession(result.subSessionId, parentSessionPath, cwd);
+			}
 
 			if (!outputConstraints?.length) break;
 			if (result.exitCode !== 0 && result.output.length <= 100) break;
