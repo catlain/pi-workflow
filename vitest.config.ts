@@ -1,20 +1,14 @@
-import { defineConfig } from "vitest/config";
+import { createConfig } from "../vitest.config.base";
 
-// workflow 的测试使用内联实现（不依赖真实 pi 包）
-// peerDependencies 由 pi 运行时解析，测试阶段不需要
-export default defineConfig({
+export default createConfig({
+	include: ["tests/**/*.test.ts"],
+	exclude: ["**/*.subagent.test.ts"],
 	test: {
-		include: ["tests/**/*.test.ts"],
-		exclude: ["**/*.subagent.test.ts"],
 		coverage: {
-			provider: "v8" as const,
-			reporter: ["text", "html"],
 			exclude: [
 				"types.ts",
 				"research-types.ts",
-				"index.ts",
 				"vitest.config.*",
-				"tests/**",
 			],
 		},
 	},
