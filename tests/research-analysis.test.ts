@@ -86,10 +86,10 @@ describe("saveAnalysis", () => {
 		saveAnalysis("/test/project", state);
 
 		expect(mockFs.existsSync).toHaveBeenCalledWith(
-			expect.stringContaining("docs/research"),
+			expect.stringMatching(/[\\/]docs[\\/]research/),
 		);
 		expect(mockFs.mkdirSync).toHaveBeenCalledWith(
-			expect.stringContaining("docs/research"),
+			expect.stringMatching(/[\\/]docs[\\/]research/),
 			{ recursive: true },
 		);
 		expect(mockFs.writeFileSync).toHaveBeenCalledWith(

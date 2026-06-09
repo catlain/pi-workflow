@@ -413,6 +413,7 @@ describe("getTopicDir", () => {
   // getTopicDir 是向后兼容别名，返回 getResearchDir(cwd) = cwd/docs/research
   it("should return getResearchDir(cwd) (backward compat alias)", () => {
     const dir = getTopicDir("/home/user/project", "test-slug");
-    expect(dir).toBe("/home/user/project/docs/research");
+    // Windows: path.join produces backslashes
+    expect(dir.replace(/\\/g, "/")).toBe("/home/user/project/docs/research");
   });
 });

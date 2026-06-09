@@ -12,10 +12,16 @@
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.74.0"
   },
+  "optionalDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.76.0"
+  },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {
       "optional": true
     }
+  },
+  "scripts": {
+    "test": "npx vitest run"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.76.0",
