@@ -34,6 +34,7 @@ export function spawnOnce(
 	modelOverride?: string,
 	timeoutMs?: number,
 	onEvent?: (event: SubagentEvent) => void,
+	extraEnv?: Record<string, string>,
 ): Promise<SubagentResult> {
 	const pi = getPiCommand();
 	const args = [
@@ -49,7 +50,12 @@ export function spawnOnce(
 	args.push(task);
 
 	return new Promise<SubagentResult>((resolve) => {
-		const proc = spawn(pi.command, args, { cwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+		const proc = spawn(pi.command, args, {
+		cwd,
+		shell: false,
+		stdio: ["ignore", "pipe", "pipe"],
+		env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
+	});
 
 		let stdout = "";
 		let stderr = "";

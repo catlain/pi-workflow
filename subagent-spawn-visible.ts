@@ -32,6 +32,7 @@ export function spawnVisible(
 	modelOverride?: string,
 	timeoutMs?: number,
 	onEvent?: (event: SubagentEvent) => void,
+	extraEnv?: Record<string, string>,
 ): Promise<SubagentResult> {
 	const taskDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-visible-"));
 	const taskFile = path.join(taskDir, "task.txt");
@@ -44,6 +45,14 @@ export function spawnVisible(
 	);
 
 	const modelArg = (modelOverride || agentDef.model) ? ` --model ${modelOverride || agentDef.model}` : "";
+
+	// 生成 extraEnv 的 shell export 行（安全转义单引号）
+	const extraEnvExports = extraEnv
+		? Object.entries(extraEnv)
+			.map(([k, v]) => `export ${k}='${v.split("'").join("'\\''")}'`)
+			.join("\n")
+		: "";
+
 	const launchScript = path.join(taskDir, "launch.sh");
 	const script = [
 		"#!/bin/bash",
@@ -53,8 +62,9 @@ export function spawnVisible(
 		"export PI_SUBAGENT_AUTO_EXIT=1",
 		`export PI_SUBAGENT_SESSION='${sessionFile}'`,
 		`export PI_SUBAGENT_NAME='pv-visible'`,
+		extraEnvExports,
 		`pi --session '${sessionFile}' -e '${subagentDonePath}' --tools ${agentDef.tools.join(",")} --append-system-prompt ${systemPromptPath}${modelArg} @${taskFile}`,
-	].join("\n");
+	].filter(Boolean).join("\n");
 	fs.writeFileSync(launchScript, script, { mode: 0o700 });
 
 	let paneId: string;
@@ -66,7 +76,7 @@ export function spawnVisible(
 		paneId = execFileSync("tmux", args, { encoding: "utf8" }).trim();
 	} catch {
 		try { fs.rmSync(taskDir, { recursive: true }); } catch { /* ignore */ }
-		return spawnOnce(task, cwd, systemPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent);
+		return spawnOnce(task, cwd, systemPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent, extraEnv);
 	}
 
 	let lastLine = 0;

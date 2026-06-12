@@ -61,6 +61,7 @@ export async function runSubagent(
 	onEvent?: (event: SubagentEvent) => void,
 	outputConstraints?: OutputConstraint[],
 	visible: boolean = true,
+	extraEnv?: Record<string, string>,
 ): Promise<SubagentResult> {
 	const agentDef = loadAgentDef(agentName);
 	if (!agentDef) {
@@ -86,8 +87,8 @@ export async function runSubagent(
 				: `${fullTask}\n\n---\n\n⚠️ 你上一轮的输出不符合格式约束：\n${validateOutputConstraints(lastResult!.output, outputConstraints!).join("\n")}\n\n请修正格式后重新输出完整的审查结果。不要重复工具调用，直接输出修正后的文本。`;
 
 			const result = useVisible
-				? await spawnVisible(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent, parentSessionPath)
-				: await spawnOnce(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent, parentSessionPath);
+				? await spawnVisible(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent, parentSessionPath, extraEnv)
+				: await spawnOnce(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent, parentSessionPath, extraEnv);
 			lastResult = result;
 
 			// 后台模式：子进程退出后通过 sessionId 查找 session 文件并注入 parentSession
