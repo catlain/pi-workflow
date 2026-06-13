@@ -6,7 +6,7 @@
  */
 
 export { runSubagent, setSessionFileResolver } from "./subagent";
-export { loadAgentDef, type AgentDef } from "./agent-loader";
+export { type AgentDef, loadAgentDef } from "@pi-atelier/shared-utils";
 export { createSubagentWidget } from "./widget";
 export { saveSubagentOutput, readSubagentOutput } from "./output";
 export type { SubagentResult, SubagentEvent } from "./types";

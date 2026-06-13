@@ -40,7 +40,6 @@ describe("smoke: barrel export", () => {
 		const files = [
 			"subagent.ts",
 			"subagent-utils.ts",
-			"agent-loader.ts",
 			"widget.ts",
 			"output.ts",
 			"types.ts",
@@ -60,7 +59,7 @@ describe("smoke: barrel export", () => {
 
 		// 验证导出语句
 		expect(content).toContain('export { runSubagent } from "./subagent"');
-		expect(content).toContain('export { loadAgentDef, type AgentDef } from "./agent-loader"');
+		expect(content).toContain('export { type AgentDef, loadAgentDef } from "@pi-atelier/shared-utils"');
 		expect(content).toContain('export { createSubagentWidget } from "./widget"');
 		expect(content).toContain('export { saveSubagentOutput, readSubagentOutput } from "./output"');
 		expect(content).toContain('export type { SubagentResult, SubagentEvent } from "./types"');

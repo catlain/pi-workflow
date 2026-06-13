@@ -3,8 +3,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// mock agent-loader
-vi.mock("../agent-loader", () => ({
+// mock shared-utils (loadAgentDef 已收敛到 shared-utils)
+vi.mock("@pi-atelier/shared-utils", () => ({
 	loadAgentDef: vi.fn(),
 }));
 
@@ -24,7 +24,7 @@ vi.mock("../subagent-spawn-visible", () => ({
 }));
 
 import { validateOutputConstraints } from "../subagent";
-import { loadAgentDef } from "../agent-loader";
+import { loadAgentDef } from "@pi-atelier/shared-utils";
 import { spawnOnce } from "../subagent-spawn-once";
 import { spawnVisible } from "../subagent-spawn-visible";
 

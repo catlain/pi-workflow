@@ -10,7 +10,7 @@
     ]
   },
   "dependencies": {
-    "@pi-atelier/shared-utils": "file:../pi-shared-utils"
+    "@pi-atelier/shared-utils": "^1.1.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.74.0"

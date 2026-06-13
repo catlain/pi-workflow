@@ -8,7 +8,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { SubagentResult, SubagentEvent } from "./types";
 import { writeTempPrompt, findAndInjectParentSession } from "./subagent-utils";
-import { loadAgentDef } from "./agent-loader";
+import { loadAgentDef } from "@pi-atelier/shared-utils";
 import { spawnOnce } from "./subagent-spawn-once";
 import { spawnVisible } from "./subagent-spawn-visible";
 
@@ -63,7 +63,7 @@ export async function runSubagent(
 	visible: boolean = true,
 	extraEnv?: Record<string, string>,
 ): Promise<SubagentResult> {
-	const agentDef = loadAgentDef(agentName);
+	const agentDef = loadAgentDef(agentName, cwd);
 	if (!agentDef) {
 		throw new Error(`子代理定义 "${agentName}" 未找到。请确保 ~/.pi/agent/agents/${agentName}.md 文件存在。`);
 	}
