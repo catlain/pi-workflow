@@ -1,59 +1,60 @@
 {
-  "name": "pi-ate-workflow",
-  "version": "0.1.0",
-  "type": "commonjs",
-  "main": "index.ts",
-  "description": "Workflow orchestration extension for pi-coding-agent — subagent spawning, research workflow, output capture",
-  "pi": {
-    "extensions": [
-      "."
-    ]
-  },
-  "dependencies": {
-    "@pi-atelier/shared-utils": "^1.1.0"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.74.0"
-  },
-  "optionalDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.76.0"
-  },
-  "peerDependenciesMeta": {
-    "@earendil-works/pi-coding-agent": {
-      "optional": true
-    }
-  },
-  "scripts": {
-    "test": "npx vitest run"
-  },
-  "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.76.0",
-    "@earendil-works/pi-tui": "^0.76.0",
-    "@types/node": "^25.6.2",
-    "@vitest/coverage-v8": "^3.2.4",
-    "typebox": "^1.1.38",
-    "typescript": "^6.0.3",
-    "vitest": "^3.0.0"
-  },
-  "files": [
-    "*.ts",
-    "tests/",
-    "README.md",
-    "README.en.md",
-    "tsconfig.json",
-    "vitest.config.ts",
-    "package.json"
-  ],
-  "keywords": [
-    "pi-package"
-  ],
-  "homepage": "https://catlain.github.io/pi-atelier/",
-  "repository": {
-    "type": "git",
-    "url": "git+ssh://git@github.com:catlain/pi-workflow.git"
-  },
-  "bugs": {
-    "url": "https://github.com/catlain/pi-workflow/issues"
-  },
-  "license": "MIT"
+	"name": "pi-ate-workflow",
+	"version": "0.1.0",
+	"type": "commonjs",
+	"main": "index.ts",
+	"description": "Workflow orchestration extension for pi-coding-agent — subagent spawning, research workflow, output capture",
+	"pi": {
+		"extensions": [
+			"."
+		]
+	},
+	"dependencies": {
+		"@pi-atelier/shared-utils": "^1.1.0"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": ">=0.74.0"
+	},
+	"optionalDependencies": {
+		"@earendil-works/pi-coding-agent": "^0.76.0"
+	},
+	"peerDependenciesMeta": {
+		"@earendil-works/pi-coding-agent": {
+			"optional": true
+		}
+	},
+	"scripts": {
+		"test": "npx vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "^0.76.0",
+		"@earendil-works/pi-tui": "^0.76.0",
+		"@types/node": "^25.6.2",
+		"@vitest/coverage-v8": "^3.2.4",
+		"typebox": "^1.1.38",
+		"typescript": "^6.0.3",
+		"vitest": "^3.0.0"
+	},
+	"files": [
+		"*.ts",
+		"tests/",
+		"README.md",
+		"README.en.md",
+		"tsconfig.json",
+		"vitest.config.ts",
+		"package.json"
+	],
+	"keywords": [
+		"pi-package"
+	],
+	"homepage": "https://catlain.github.io/pi-atelier/",
+	"repository": {
+		"type": "git",
+		"url": "git+ssh://git@github.com:catlain/pi-workflow.git"
+	},
+	"bugs": {
+		"url": "https://github.com/catlain/pi-workflow/issues"
+	},
+	"license": "MIT"
 }
