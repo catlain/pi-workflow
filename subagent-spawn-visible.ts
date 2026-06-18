@@ -32,6 +32,7 @@ export function spawnVisible(
 	modelOverride?: string,
 	timeoutMs?: number,
 	onEvent?: (event: SubagentEvent) => void,
+	parentSessionPath?: string,
 	extraEnv?: Record<string, string>,
 ): Promise<SubagentResult> {
 	const taskDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-visible-"));
@@ -76,7 +77,7 @@ export function spawnVisible(
 		paneId = execFileSync("tmux", args, { encoding: "utf8" }).trim();
 	} catch {
 		try { fs.rmSync(taskDir, { recursive: true }); } catch { /* ignore */ }
-		return spawnOnce(task, cwd, systemPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent, extraEnv);
+		return spawnOnce(task, cwd, systemPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent, parentSessionPath, extraEnv);
 	}
 
 	let lastLine = 0;
@@ -86,8 +87,8 @@ export function spawnVisible(
 	const collectTexts = (message: PiMessage) => {
 		if (message?.role !== "assistant") return;
 		for (const part of message.content ?? []) {
-			if (part.type === "text" && part.text.trim()) {
-				allTexts.push(part.text);
+			if (part.type === "text" && part.text?.trim()) {
+				allTexts.push(part.text!);
 			}
 		}
 	};

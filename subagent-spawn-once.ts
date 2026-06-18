@@ -34,6 +34,7 @@ export function spawnOnce(
 	modelOverride?: string,
 	timeoutMs?: number,
 	onEvent?: (event: SubagentEvent) => void,
+	parentSessionPath?: string,
 	extraEnv?: Record<string, string>,
 ): Promise<SubagentResult> {
 	const pi = getPiCommand();
@@ -65,11 +66,11 @@ export function spawnOnce(
 		let capturedSessionId: string | undefined;
 		const sessionIdRegex = /\{"type":"session","version":\d+,"id":"([^"]+)"/;
 
-		const collectAssistantTexts = (message: PiMessage) => {
+		const collectAssistantTexts = (message: PiMessage | undefined) => {
 			if (message?.role !== "assistant") return;
 			for (const part of message.content ?? []) {
-				if (part.type === "text" && part.text.trim()) {
-					allAssistantTexts.push(part.text);
+				if (part.type === "text" && part.text?.trim()) {
+					allAssistantTexts.push(part.text!);
 				}
 			}
 		};

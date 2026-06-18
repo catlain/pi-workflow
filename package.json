@@ -25,7 +25,8 @@
 	},
 	"scripts": {
 		"test": "npx vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"prepublishOnly": "npm run typecheck"
 	},
 	"devDependencies": {
 		"@earendil-works/pi-coding-agent": "^0.76.0",

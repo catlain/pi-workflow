@@ -86,7 +86,7 @@ describe("spawnVisible — extraEnv 透传", () => {
 		fsMock.existsSync.mockReturnValue(true);
 		fsMock.readFileSync.mockReturnValue("");
 
-		const resultPromise = spawnVisible("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, extraEnv);
+		const resultPromise = spawnVisible("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, undefined, extraEnv);
 
 		await vi.advanceTimersByTimeAsync(5000);
 		await resultPromise;
@@ -125,7 +125,7 @@ describe("spawnVisible — extraEnv 透传", () => {
 		fsMock.existsSync.mockReturnValue(true);
 		fsMock.readFileSync.mockReturnValue("");
 
-		const resultPromise = spawnVisible("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, extraEnv);
+		const resultPromise = spawnVisible("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, undefined, extraEnv);
 		await vi.advanceTimersByTimeAsync(5000);
 		await resultPromise;
 
@@ -139,11 +139,11 @@ describe("spawnVisible — extraEnv 透传", () => {
 		// tmux split-window 失败 → fallback
 		childProcessMock.__results.push({ error: new Error("tmux not found") });
 
-		await spawnVisible("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, extraEnv);
+		await spawnVisible("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, undefined, extraEnv);
 
 		expect(spawnOnce).toHaveBeenCalledWith(
 			expect.any(String), expect.any(String), expect.any(String), expect.any(Object),
-			undefined, undefined, undefined, undefined, extraEnv,
+			undefined, undefined, undefined, undefined, undefined, extraEnv,
 		);
 	});
 });

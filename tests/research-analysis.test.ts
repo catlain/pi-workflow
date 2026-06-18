@@ -7,10 +7,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockFs = vi.hoisted(() => ({
-	existsSync: vi.fn<[string], boolean>(),
-	readFileSync: vi.fn<[string, string], string>(),
-	writeFileSync: vi.fn<[string, string, string], void>(),
-	mkdirSync: vi.fn<[string, object], void>(),
+	existsSync: vi.fn<(path: string) => boolean>(),
+	readFileSync: vi.fn<(path: string, encoding: string) => string>(),
+	writeFileSync: vi.fn<(path: string, data: string, encoding: string) => void>(),
+	mkdirSync: vi.fn<(path: string, options: object) => void>(),
 }));
 
 vi.mock("node:fs", () => mockFs);

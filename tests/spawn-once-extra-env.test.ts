@@ -61,7 +61,7 @@ describe("spawnOnce — extraEnv 透传", () => {
 			PI_SUBAGENT_CHILD_AGENT: "pv-executor",
 			PI_SUBAGENT_CHILD_INDEX: "1",
 		};
-		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, extraEnv);
+		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, undefined, extraEnv);
 		mockProc.emit("close", 0);
 		await resultPromise;
 
@@ -72,7 +72,7 @@ describe("spawnOnce — extraEnv 透传", () => {
 
 	it("extraEnv 的值覆盖 process.env 中同名 key", async () => {
 		const extraEnv = { PATH: "/custom/path" };
-		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, extraEnv);
+		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, undefined, extraEnv);
 		mockProc.emit("close", 0);
 		await resultPromise;
 
@@ -81,7 +81,7 @@ describe("spawnOnce — extraEnv 透传", () => {
 	});
 
 	it("extraEnv 为空对象时仍包含 process.env", async () => {
-		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, {});
+		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, undefined, {});
 		mockProc.emit("close", 0);
 		await resultPromise;
 

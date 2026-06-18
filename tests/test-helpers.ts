@@ -7,7 +7,7 @@ import { vi } from "vitest";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export function createMockContext(entries: any[] = []): ExtensionContext {
-	return {
+	return ({
 		cwd: "/tmp/test",
 		hasUI: true,
 		ui: {
@@ -36,5 +36,5 @@ export function createMockContext(entries: any[] = []): ExtensionContext {
 		getSystemPrompt: vi.fn().mockReturnValue(""),
 		model: undefined,
 		modelRegistry: {} as any,
-	};
+	} as unknown) as ExtensionContext;
 }
