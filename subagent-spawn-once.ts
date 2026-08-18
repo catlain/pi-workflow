@@ -2,28 +2,13 @@
  * workflow: 后台 spawn 实现
  *
  * spawnOnce — 后台模式（pipe stdout，流式解析 JSON）
+ * 使用 SubagentSession 管理输出收集和退出控制
  */
 
-import { spawn, execSync } from "node:child_process";
-import type { SubagentResult, SubagentEvent } from "./types";
+import { spawn } from "node:child_process";
+import { SubagentSession } from "./subagent-session";
+import type { SubagentEvent, SubagentResult } from "./types";
 import { getPiCommand } from "./subagent-utils";
-
-/** pi JSON 模式输出的事件行 */
-interface PiJsonEvent {
-	type: string;
-	id?: string;
-	toolName?: string;
-	args?: Record<string, unknown>;
-	assistantMessageEvent?: { type: string; delta?: string };
-	message?: PiMessage;
-	messages?: PiMessage[];
-}
-
-/** pi JSON 模式中的消息结构 */
-interface PiMessage {
-	role?: string;
-	content?: Array<{ type: string; text?: string }>;
-}
 
 export function spawnOnce(
 	task: string,
@@ -50,122 +35,132 @@ export function spawnOnce(
 	}
 	args.push(task);
 
+	const session = new SubagentSession({ onEvent });
+
 	return new Promise<SubagentResult>((resolve) => {
 		const proc = spawn(pi.command, args, {
-		cwd,
-		shell: false,
-		stdio: ["ignore", "pipe", "pipe"],
-		env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
-	});
+			cwd,
+			shell: false,
+			stdio: ["ignore", "pipe", "pipe"],
+			env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
+		});
 
 		let stdout = "";
 		let stderr = "";
-		let allAssistantTexts: string[] = [];
 		let processedOffset = 0;
-		let resolved = false;
-		let capturedSessionId: string | undefined;
 		const sessionIdRegex = /\{"type":"session","version":\d+,"id":"([^"]+)"/;
-
-		const collectAssistantTexts = (message: PiMessage | undefined) => {
-			if (message?.role !== "assistant") return;
-			for (const part of message.content ?? []) {
-				if (part.type === "text" && part.text?.trim()) {
-					allAssistantTexts.push(part.text!);
-				}
-			}
-		};
-
-		const handleEvent = (event: PiJsonEvent) => {
-			if (event.type === "session" && event.id && !capturedSessionId) capturedSessionId = event.id;
-			if (event.type === "tool_execution_start") onEvent?.({ type: "tool", toolName: event.toolName, toolArgs: event.args });
-			if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") onEvent?.({ type: "thinking", text: event.assistantMessageEvent.delta });
-			if (event.type === "message_end") collectAssistantTexts(event.message);
-			if (event.type === "turn_end") { collectAssistantTexts(event.message); onEvent?.({ type: "message", message: event.message }); }
-			if (event.type === "agent_end" && Array.isArray(event.messages)) { for (const msg of event.messages) collectAssistantTexts(msg); }
-		};
 
 		proc.stdout.on("data", (data: Buffer) => {
 			stdout += data.toString();
 			const newData = stdout.slice(processedOffset);
 			for (const line of newData.split("\n")) {
 				if (!line.trim()) continue;
-				try { handleEvent(JSON.parse(line)); } catch { /* skip non-JSON */ }
+				try { session.parseStreamEvent(JSON.parse(line)); } catch { /* skip non-JSON */ }
 			}
 			processedOffset = stdout.lastIndexOf("\n") + 1;
 		});
 
-		const checkSessionId = (text: string) => { if (!capturedSessionId) { const m = text.match(sessionIdRegex); if (m) capturedSessionId = m[1]; } };
+		// 额外监听：捕获 sessionId（stdout 里可能跨 chunk 断裂）
+		const checkSessionId = (text: string) => {
+			if (!session.capturedSessionId) {
+				const m = text.match(sessionIdRegex);
+				if (m) session.capturedSessionId = m[1];
+			}
+		};
 		const origOnData = proc.stdout.listeners("data").pop();
 		if (origOnData) proc.stdout.on("data", (buf: Buffer) => checkSessionId(buf.toString()));
 
 		proc.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
 
+		// ─── 清理辅助 ─────────────────────────────
+
+		const killProc = () => {
+			proc.kill("SIGTERM");
+			setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 5000);
+		};
+
+		const clearTimers = () => {
+			clearTimeout(wallTimer);
+			clearInterval(stallChecker);
+		};
+
+		// ─── 计时器 ─────────────────────────────────
+
 		// 活跃超时：有新输出就续命
 		let lastActivityTime = Date.now();
 		const STALL_MS = 5 * 60 * 1000;
 		const stallChecker = setInterval(() => {
-			if (resolved) { clearInterval(stallChecker); return; }
+			if (session.isDone) { clearInterval(stallChecker); return; }
 			if (Date.now() - lastActivityTime > STALL_MS) {
-				resolved = true;
-				clearTimeout(wallTimer);
-				clearInterval(stallChecker);
-				proc.kill("SIGTERM");
-				setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 5000);
-				resolve({ exitCode: 1, output: [...new Set(allAssistantTexts)].join("\n\n---\n\n") || "(stalled, no output for 5 min)", stderr, timedOut: true, subSessionId: capturedSessionId });
+				session.resolveOnce({
+					exitCode: 1,
+					output: session.formatOutput("(stalled, no output for 5 min)"),
+					stderr,
+					timedOut: true,
+				});
+				killProc();
 			}
 		}, 5000);
 
-		// 更新活跃时间（在 stdout data handler 里追踪）
 		proc.stdout.prependListener("data", () => { lastActivityTime = Date.now(); });
 
 		// 墙钟兜底
 		const TIMEOUT_MS = timeoutMs ?? 30 * 60 * 1000;
 		const wallTimer = setTimeout(() => {
-			if (resolved) return;
-			resolved = true;
-			clearInterval(stallChecker);
-			clearTimeout(wallTimer);
-			proc.kill("SIGTERM");
-			setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 5000);
-			resolve({ exitCode: 1, output: [...new Set(allAssistantTexts)].join("\n\n---\n\n") || "(timed out)", stderr, timedOut: true, subSessionId: capturedSessionId });
+			session.resolveOnce({
+				exitCode: 1,
+				output: session.formatOutput("(timed out)"),
+				stderr,
+				timedOut: true,
+			});
+			killProc();
 		}, TIMEOUT_MS);
 
-		proc.on("close", (code) => {
-			clearTimeout(wallTimer);
-			clearInterval(stallChecker);
-			if (resolved) return;
-			resolved = true;
+		// ─── 进程事件 ─────────────────────────────
 
+		proc.on("close", (code) => {
+			clearTimers();
+			// 处理剩余未解析的 stdout
 			const remaining = stdout.slice(processedOffset);
 			for (const line of remaining.split("\n")) {
 				if (!line.trim()) continue;
-				try { handleEvent(JSON.parse(line)); } catch { /* skip */ }
+				try { session.parseStreamEvent(JSON.parse(line)); } catch { /* skip */ }
 			}
-
-			resolve({ exitCode: code ?? 1, output: [...new Set(allAssistantTexts)].join("\n\n---\n\n") || "(no output)", stderr, subSessionId: capturedSessionId });
+			session.resolveOnce({
+				exitCode: code ?? 1,
+				output: session.formatOutput("(no output)"),
+				stderr,
+			});
 		});
 
 		proc.on("error", (err) => {
-			clearTimeout(wallTimer);
-			clearInterval(stallChecker);
-			if (resolved) return;
-			resolved = true;
-			resolve({ exitCode: 1, output: allAssistantTexts.join("\n\n---\n\n") || "", stderr: err.message, error: err.message, subSessionId: capturedSessionId });
+			clearTimers();
+			session.resolveOnce({
+				exitCode: 1,
+				output: session.formatOutput(""),
+				stderr: err.message,
+				error: err.message,
+			});
 		});
 
+		// ─── AbortSignal ──────────────────────────
+
 		if (signal) {
-			const kill = () => {
-				if (!resolved) {
-					resolved = true;
-					clearTimeout(wallTimer);
-					clearInterval(stallChecker);
-					proc.kill("SIGTERM");
-					if (capturedSessionId) resolve({ exitCode: 1, output: allAssistantTexts.join("\n\n---\n\n") || "", stderr: "aborted", subSessionId: capturedSessionId });
-					setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 5000);
+			const onAbort = () => {
+				if (!session.isDone) {
+					session.resolveOnce({
+						exitCode: 1,
+						output: session.formatOutput(""),
+						stderr: "aborted",
+					});
+					killProc();
 				}
 			};
-			if (signal.aborted) kill();
-			else signal.addEventListener("abort", kill, { once: true });
+			if (signal.aborted) onAbort();
+			else signal.addEventListener("abort", onAbort, { once: true });
 		}
+
+		// 将 session.result 连接到外部 resolve
+		session.result.then(resolve);
 	});
 }

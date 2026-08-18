@@ -1,11 +1,27 @@
 /**
- * 测试 subagent.ts：validateOutputConstraints + runSubagent
+ * 测试 subagent.ts：runSubagent（spawn 路径选择 / 超时解析 / 桥接注入 / 约束重试）
+ * validateOutputConstraints 的测试在 output-constraints.test.ts
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // mock shared-utils (loadAgentDef 已收敛到 shared-utils)
 vi.mock("@pi-atelier/shared-utils", () => ({
 	loadAgentDef: vi.fn(),
+	getEffectiveConfig: vi.fn(() => ({ config: {}, sources: {} })),
+}));
+
+// mock 超时解析（runSubagent 内部调用）
+vi.mock("../timeout-config", () => ({
+	resolveSubagentTimeout: vi.fn(() => 30 * 60 * 1000),
+	DEFAULT_SUBAGENT_TIMEOUT_MS: 30 * 60 * 1000,
+	SUBAGENT_TIMEOUT_DEFAULTS: { timeoutMs: 1800000, agentTimeouts: {} },
+}));
+
+// mock 桥接（runSubagent 内部调用）
+vi.mock("../intercom-bridge", () => ({
+	buildIntercomBridge: vi.fn(() => ({ PI_SUBAGENT_RUN_ID: "run-test" })),
+	resolveOrchestratorName: vi.fn(async () => undefined),
+	setOrchestratorNameResolver: vi.fn(),
 }));
 
 // mock subagent-utils
@@ -23,50 +39,22 @@ vi.mock("../subagent-spawn-visible", () => ({
 	spawnVisible: vi.fn(),
 }));
 
-import { validateOutputConstraints } from "../subagent";
 import { loadAgentDef } from "@pi-atelier/shared-utils";
 import { spawnOnce } from "../subagent-spawn-once";
 import { spawnVisible } from "../subagent-spawn-visible";
-
-describe("validateOutputConstraints", () => {
-	it("无约束时返回空列表", () => {
-		expect(validateOutputConstraints("hello", [])).toEqual([]);
-	});
-
-	it("全部通过返回空列表", () => {
-		const constraints = [
-			{ rule: "必须是 JSON", validate: (s: string) => (s.startsWith("{") ? null : "not json") },
-		];
-		expect(validateOutputConstraints('{"ok":true}', constraints)).toEqual([]);
-	});
-
-	it("有不通过的返回错误列表", () => {
-		const constraints = [
-			{ rule: "必须是 JSON", validate: (s: string) => (s.startsWith("{") ? null : "not json") },
-			{ rule: "包含 ok", validate: (s: string) => (s.includes("ok") ? null : "missing ok") },
-		];
-		expect(validateOutputConstraints("plain text", constraints)).toEqual(["not json", "missing ok"]);
-	});
-
-	it("部分通过只返回不通过的", () => {
-		const constraints = [
-			{ rule: "包含 ok", validate: (s: string) => (s.includes("ok") ? null : "missing ok") },
-			{ rule: "包含 err", validate: (s: string) => (s.includes("err") ? null : "missing err") },
-		];
-		expect(validateOutputConstraints("has ok but not e", constraints)).toEqual(["missing err"]);
-	});
-});
+import { resolveSubagentTimeout } from "../timeout-config";
+import { runSubagent } from "../subagent";
 
 describe("runSubagent", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		// 默认模拟 TMUX 不存在，走 spawnOnce
+		// 默认模拟无分屏终端，走 spawnOnce
 		delete process.env.TMUX;
+		delete process.env.WEZTERM_PANE;
 	});
 
 	it("agentDef 未找到时抛错", async () => {
 		(loadAgentDef as ReturnType<typeof vi.fn>).mockReturnValue(null);
-		const { runSubagent } = await import("../subagent");
 		await expect(runSubagent("nonexistent", "task", "/cwd")).rejects.toThrow("未找到");
 	});
 
@@ -82,10 +70,48 @@ describe("runSubagent", () => {
 			stderr: "",
 		});
 
-		const { runSubagent } = await import("../subagent");
 		const result = await runSubagent("test-agent", "do something", "/cwd", undefined, undefined, undefined, undefined, undefined, false);
 		expect(result.output).toBe("done");
 		expect(result.exitCode).toBe(0);
+		// 后台模式默认注入桥接环境变量
+		const spawnArgs = (spawnOnce as ReturnType<typeof vi.fn>).mock.calls[0];
+		expect(spawnArgs[9]).toEqual(expect.objectContaining({ PI_SUBAGENT_RUN_ID: "run-test" }));
+	});
+
+	it("extraEnv 与桥接变量合并，extraEnv 优先", async () => {
+		(loadAgentDef as ReturnType<typeof vi.fn>).mockReturnValue({
+			name: "test-agent",
+			tools: ["read"],
+			systemPrompt: "You are a test agent",
+		});
+		(spawnOnce as ReturnType<typeof vi.fn>).mockResolvedValue({
+			exitCode: 0,
+			output: "done",
+			stderr: "",
+		});
+
+		await runSubagent("test-agent", "task", "/cwd", undefined, undefined, undefined, undefined, undefined, false, { PI_SUBAGENT_RUN_ID: "run-custom" });
+		const spawnArgs = (spawnOnce as ReturnType<typeof vi.fn>).mock.calls[0];
+		expect(spawnArgs[9]).toEqual({ PI_SUBAGENT_RUN_ID: "run-custom" });
+	});
+
+	it("超时未显式传参时经配置链解析后传给 spawn", async () => {
+		(resolveSubagentTimeout as ReturnType<typeof vi.fn>).mockReturnValue(123456);
+		(loadAgentDef as ReturnType<typeof vi.fn>).mockReturnValue({
+			name: "test-agent",
+			tools: ["read"],
+			systemPrompt: "You are a test agent",
+		});
+		(spawnOnce as ReturnType<typeof vi.fn>).mockResolvedValue({
+			exitCode: 0,
+			output: "done",
+			stderr: "",
+		});
+
+		await runSubagent("test-agent", "task", "/cwd", undefined, undefined, undefined, undefined, undefined, false);
+		expect(resolveSubagentTimeout).toHaveBeenCalledWith("test-agent", "/cwd", undefined);
+		const spawnArgs = (spawnOnce as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+		expect(spawnArgs[6]).toBe(123456);
 	});
 
 	it("有 TMUX 时走 spawnVisible", async () => {
@@ -101,11 +127,28 @@ describe("runSubagent", () => {
 			stderr: "",
 		});
 
-		const { runSubagent } = await import("../subagent");
 		const result = await runSubagent("test-agent", "do something", "/cwd");
 		expect(spawnVisible).toHaveBeenCalled();
 		expect(result.output).toBe("visible done");
 		delete process.env.TMUX;
+	});
+
+	it("有 WEZTERM_PANE 时也走 spawnVisible", async () => {
+		process.env.WEZTERM_PANE = "7";
+		(loadAgentDef as ReturnType<typeof vi.fn>).mockReturnValue({
+			name: "test-agent",
+			tools: ["read"],
+			systemPrompt: "You are a test agent",
+		});
+		(spawnVisible as ReturnType<typeof vi.fn>).mockResolvedValue({
+			exitCode: 0,
+			output: "wez done",
+			stderr: "",
+		});
+
+		await runSubagent("test-agent", "do something", "/cwd");
+		expect(spawnVisible).toHaveBeenCalled();
+		delete process.env.WEZTERM_PANE;
 	});
 
 	it("约束不通过时重试", async () => {
@@ -125,7 +168,6 @@ describe("runSubagent", () => {
 			validate: (s: string) => s.includes("GOOD") ? null : "缺少 GOOD",
 		}];
 
-		const { runSubagent } = await import("../subagent");
 		const result = await runSubagent("test-agent", "task", "/cwd", undefined, undefined, undefined, undefined, constraints, false);
 		expect(spawnOnce).toHaveBeenCalledTimes(2);
 		expect(result.output).toBe("GOOD format");
@@ -150,7 +192,6 @@ describe("runSubagent", () => {
 			validate: (s: string) => s.includes("GOOD") ? null : "缺少 GOOD",
 		}];
 
-		const { runSubagent } = await import("../subagent");
 		const result = await runSubagent("test-agent", "task", "/cwd", undefined, undefined, undefined, undefined, constraints, false);
 		expect(spawnOnce).toHaveBeenCalledTimes(3); // initial + 2 retries
 		expect(result.output).toBe("always bad");

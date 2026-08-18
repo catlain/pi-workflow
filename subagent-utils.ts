@@ -1,13 +1,18 @@
 /**
  * workflow: 子代理工具函数
- *
- * 从 PV 的 subagent.ts 提取的通用函数。
  */
 
-import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+
+/**
+ * 将 Windows 反斜杠路径转为 Unix 正斜杠路径。
+ * launch.sh 在 bash 里执行，反斜杠会被解释为转义字符导致路径错误。
+ */
+function toUnixPath(p: string): string {
+	return p.replace(/\\/g, "/");
+}
 
 /**
  * 将 parentSession 注入子代理 session JSONL 首行的 header。
@@ -39,11 +44,13 @@ export function findAndInjectParentSession(sessionId: string | undefined, parent
 		|| path.join(os.homedir(), ".pi/agent/sessions");
 	if (!fs.existsSync(baseDir)) return;
 
+	// 从 cwd 推导 session 子目录
 	const cwdSlug = "--" + cwd.replace(/^\//, "").replace(/\//g, "-") + "--";
 	const sessionDir = path.join(baseDir, cwdSlug);
 	if (!fs.existsSync(sessionDir)) return;
 
 	try {
+		// 按修改时间降序，优先检查最近的文件
 		const files = fs.readdirSync(sessionDir)
 			.filter(f => f.endsWith(".jsonl"))
 			.map(f => ({ name: f, mtime: fs.statSync(path.join(sessionDir, f)).mtimeMs }))
@@ -94,4 +101,65 @@ export async function writeTempPrompt(content: string): Promise<string> {
 	const filePath = path.join(tmpDir, "system-prompt.md");
 	await fs.promises.writeFile(filePath, content, { encoding: "utf-8", mode: 0o600 });
 	return filePath;
+}
+
+/** 可见模式的临时目录信息 */
+export interface VisibleTaskDir {
+	taskDir: string;
+	taskFile: string;
+	sessionFile: string;
+	launchScript: string;
+}
+
+/**
+ * 创建可见模式的临时目录和启动脚本。
+ * 调用方负责在结束时删除 taskDir。
+ */
+export function createVisibleTaskDir(
+	task: string,
+	cwd: string,
+	systemPromptPath: string,
+	agentDef: { tools: string[]; model?: string },
+	modelOverride?: string,
+	extraEnv?: Record<string, string>,
+): VisibleTaskDir {
+	const taskDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-visible-"));
+	const taskFile = path.join(taskDir, "task.txt");
+	fs.writeFileSync(taskFile, task, { encoding: "utf-8" });
+
+	const sessionFile = path.join(taskDir, "session.jsonl");
+
+	const modelArg = (modelOverride || agentDef.model)
+		? ` --model ${modelOverride || agentDef.model}`
+		: "";
+
+	// extraEnv 生成 shell export 行（安全转义单引号）
+	const extraEnvExports = extraEnv
+		? Object.entries(extraEnv)
+			.map(([k, v]) => `export ${k}='${v.split("'").join("'\\''")}'`)
+			.join("\n")
+		: "";
+
+	const launchScript = path.join(taskDir, "launch.sh");
+
+	// launch.sh 在 bash 里执行，所有路径必须用 Unix 格式（正斜杠）
+	const uCwd = toUnixPath(cwd);
+	const uSessionFile = toUnixPath(sessionFile);
+	const uSystemPromptPath = toUnixPath(systemPromptPath);
+	const uTaskFile = toUnixPath(taskFile);
+
+	const script = [
+		"#!/bin/bash",
+		'export FNM_PATH="$HOME/.local/share/fnm"',
+		'if [ -d "$FNM_PATH" ]; then export PATH="$FNM_PATH:$PATH" && eval "$(fnm env --shell bash)"; fi',
+		`cd "${uCwd}"`,
+		"export PI_SUBAGENT_AUTO_EXIT=1",
+		`export PI_SUBAGENT_SESSION='${uSessionFile}'`,
+		`export PI_SUBAGENT_NAME='pv-visible'`,
+		extraEnvExports,
+		`pi --session '${uSessionFile}' --tools ${agentDef.tools.join(",")} --append-system-prompt '${uSystemPromptPath}'${modelArg} @'${uTaskFile}'`,
+	].filter(Boolean).join("\n");
+	fs.writeFileSync(launchScript, script, { mode: 0o700 });
+
+	return { taskDir, taskFile, sessionFile, launchScript };
 }

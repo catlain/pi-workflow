@@ -1,88 +1,96 @@
 /**
  * 测试 subagent-spawn-visible.ts：spawnVisible
  *
- * spawnVisible 深度依赖 tmux + execFileSync + 轮询。
- * 当 tmux 不可用时，会 fallback 到 spawnOnce。
- * 这里主要测试：tmux 成功路径 + fallback 路径 + 超时 + abort。
+ * 新实现通过 term-backend 抽象分屏（WezTerm/tmux），测试 mock 整个后端：
+ * 终端不可用 fallback / pane 消失后读取结果 / 超时 / abort。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../subagent-utils", () => ({
 	getPiCommand: vi.fn(() => ({ command: "node", args: ["/usr/local/bin/pi"] })),
+	createVisibleTaskDir: vi.fn(() => ({
+		taskDir: "/tmp/pi-visible-test",
+		taskFile: "/tmp/pi-visible-test/task.txt",
+		sessionFile: "/tmp/pi-visible-test/session.jsonl",
+		launchScript: "/tmp/pi-visible-test/launch.sh",
+	})),
+	injectParentSession: vi.fn(),
 }));
-vi.mock("@earendil-works/pi-coding-agent", () => ({}));
 vi.mock("../subagent-spawn-once", () => ({
 	spawnOnce: vi.fn(() => Promise.resolve({ exitCode: 0, output: "fallback", stderr: "" })),
 }));
 
-const { childProcessMock } = vi.hoisted(() => {
-	const results: { error?: Error; stdout?: string }[] = [];
-	let callIdx = 0;
+const { backendMock, termDetect } = vi.hoisted(() => {
+	const backend = {
+		splitPane: vi.fn(() => "%42"),
+		killPane: vi.fn(),
+		isPaneAlive: vi.fn(() => true),
+	};
+	let detect: string | null = "tmux";
 	return {
-		childProcessMock: {
-			__results: results,
-			__reset: () => { callIdx = 0; results.length = 0; },
-			execFileSync: (...args: any[]) => {
-				const r = results[callIdx++];
-				if (r?.error) throw r.error;
-				return r?.stdout ?? "";
-			},
+		backendMock: backend,
+		termDetect: {
+			set: (v: string | null) => { detect = v; },
+			get: () => detect,
 		},
 	};
 });
 
-vi.mock("node:child_process", async (importOriginal) => {
-	const actual = await importOriginal() as any;
-	return { ...actual, execFileSync: childProcessMock.execFileSync };
-});
+vi.mock("../term-backend", () => ({
+	detectTerminal: () => termDetect.get(),
+	getBackend: () => backendMock,
+}));
 
-const { fsMock } = vi.hoisted(() => {
-	const mock = {
+const { fsMock } = vi.hoisted(() => ({
+	fsMock: {
 		existsSync: vi.fn(() => false),
 		readFileSync: vi.fn(() => ""),
 		writeFileSync: vi.fn(),
-		mkdirSync: vi.fn(),
-		mkdtempSync: vi.fn(() => "/tmp/pi-visible-test"),
 		rmSync: vi.fn(),
-	};
-	return { fsMock: mock };
-});
+	},
+}));
 
-vi.mock("node:fs", () => fsMock);
+vi.mock("node:fs", async (importOriginal) => {
+	const actual = await importOriginal() as any;
+	return { ...actual, ...fsMock };
+});
 
 import { spawnVisible } from "../subagent-spawn-visible";
 import { spawnOnce } from "../subagent-spawn-once";
+import { createVisibleTaskDir } from "../subagent-utils";
 
 describe("spawnVisible", () => {
 	beforeEach(() => {
 		vi.useFakeTimers({ shouldAdvanceTime: true });
-		childProcessMock.__reset();
+		termDetect.set("tmux");
+		backendMock.splitPane.mockReturnValue("%42");
+		backendMock.isPaneAlive.mockReturnValue(true);
+		backendMock.killPane.mockClear();
 		fsMock.existsSync.mockReturnValue(false);
 		fsMock.readFileSync.mockReturnValue("");
 	});
 	afterEach(() => {
 		vi.useRealTimers();
-		vi.restoreAllMocks();
 	});
 
-	it("tmux 不可用时 fallback 到 spawnOnce", async () => {
-		// tmux split-window 失败 → fallback
-		childProcessMock.__results.push({ error: new Error("tmux not found") });
-
+	it("终端不可用时 fallback 到 spawnOnce", async () => {
+		termDetect.set(null);
 		const result = await spawnVisible("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] });
 		expect(spawnOnce).toHaveBeenCalled();
 		expect(result.exitCode).toBe(0);
 		expect(result.output).toBe("fallback");
 	});
 
-	it("tmux 成功 + pane 消失后读取结果文件", async () => {
-		// 1st call: tmux split-window → 成功，返回 pane ID
-		childProcessMock.__results.push({ stdout: " %42\n" });
-		// 2nd+ calls: tmux list-panes → 失败（pane 已消失）触发 finish
-		childProcessMock.__results.push({ error: new Error("no pane") });
-		childProcessMock.__results.push({ error: new Error("no pane") });
-		// finish 内部调 execFileSync("sleep",...) 
-		childProcessMock.__results.push({ stdout: "" });
+	it("splitPane 失败时 fallback 到 spawnOnce", async () => {
+		backendMock.splitPane.mockImplementation(() => { throw new Error("split failed"); });
+		const result = await spawnVisible("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] });
+		expect(spawnOnce).toHaveBeenCalled();
+		expect(result.exitCode).toBe(0);
+	});
+
+	it("分屏成功 + pane 消失后读取结果文件", async () => {
+		// pane 消失触发 finish
+		backendMock.isPaneAlive.mockReturnValue(false);
 
 		// session 文件有内容
 		fsMock.existsSync.mockReturnValue(true);
@@ -97,43 +105,45 @@ describe("spawnVisible", () => {
 		expect(result.output).toContain("hello");
 	});
 
-	it("超时时返回 timedOut", async () => {
-		// tmux 成功
-		childProcessMock.__results.push({ stdout: " %42\n" });
-		// list-panes 一直成功（pane 存在），但无 session 文件
-		for (let i = 0; i < 100; i++) {
-			childProcessMock.__results.push({ stdout: "%42: [100x50] [active]" });
-		}
+	it("超时时返回 timedOut 并清理 pane", async () => {
+		// pane 一直存活，但无 session 文件
+		backendMock.isPaneAlive.mockReturnValue(true);
 		fsMock.existsSync.mockReturnValue(false);
 
 		const resultPromise = spawnVisible("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, 1000);
 
-		// 推进到超时
 		await vi.advanceTimersByTimeAsync(3000);
 
 		const result = await resultPromise;
 		expect(result.timedOut).toBe(true);
+		expect(backendMock.killPane).toHaveBeenCalledWith("%42");
 	});
 
-	it("signal abort 时终止", async () => {
+	it("signal abort 时终止并清理", async () => {
 		const controller = new AbortController();
-
-		// tmux 成功
-		childProcessMock.__results.push({ stdout: " %42\n" });
-		// list-panes 持续成功
-		for (let i = 0; i < 100; i++) {
-			childProcessMock.__results.push({ stdout: "%42" });
-		}
-
+		backendMock.isPaneAlive.mockReturnValue(true);
 		fsMock.existsSync.mockReturnValue(false);
 
 		const resultPromise = spawnVisible("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, controller.signal, undefined, 10000);
 
-		// 触发 abort
 		controller.abort();
 
 		const result = await resultPromise;
 		expect(result.stderr).toContain("aborted");
 		expect(result.exitCode).toBe(1);
+		expect(backendMock.killPane).toHaveBeenCalled();
+	});
+
+	it("extraEnv 透传到 createVisibleTaskDir", async () => {
+		termDetect.set(null); // 直接走 fallback，验证参数传递
+		await spawnVisible(
+			"task", "/cwd", "/tmp/prompt.md", { tools: ["read"] },
+			undefined, undefined, undefined, undefined, undefined,
+			{ PI_SUBAGENT_RUN_ID: "run-abc" },
+		);
+		expect(createVisibleTaskDir).toHaveBeenCalledWith(
+			"task", "/cwd", "/tmp/prompt.md", { tools: ["read"] },
+			undefined, { PI_SUBAGENT_RUN_ID: "run-abc" },
+		);
 	});
 });

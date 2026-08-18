@@ -2,15 +2,26 @@
  * workflow: 子代理执行器公开 API
  *
  * spawn 实现在 subagent-spawn-once.ts 和 subagent-spawn-visible.ts。
+ * 超时在 timeout-config.ts 单点解析（fallback < timeoutMs < agentTimeouts < 显式传参）。
+ * 桥接在 intercom-bridge.ts 默认注入（PI_SUBAGENT_* 5 变量）。
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { SubagentResult, SubagentEvent } from "./types";
-import { writeTempPrompt, findAndInjectParentSession } from "./subagent-utils";
+import {
+	createVisibleTaskDir,
+	findAndInjectParentSession,
+	writeTempPrompt,
+} from "./subagent-utils";
 import { loadAgentDef } from "@pi-atelier/shared-utils";
 import { spawnOnce } from "./subagent-spawn-once";
 import { spawnVisible } from "./subagent-spawn-visible";
+import { resolveSubagentTimeout } from "./timeout-config";
+import {
+	buildIntercomBridge,
+	resolveOrchestratorName,
+} from "./intercom-bridge";
 
 /** 模块级 session 文件解析器，由各扩展在 session_start 时注册 */
 let _sessionFileResolver: (() => string | undefined) | undefined;
@@ -45,11 +56,14 @@ export function validateOutputConstraints(output: string, constraints: OutputCon
 }
 
 /**
- * 运行子代理。支持输出格式约束：约束拼入 task，执行后验证，
- * 不通过则追加修正提示重跑（最多 2 次）。
+ * 运行子代理（唯一 spawn 路径）。
+ *
+ * 超时：timeoutMs 参数为显式传参（最高优先级）；未传时由配置链解析
+ * （代码 fallback 30min < subagent.timeoutMs < subagent.agentTimeouts[agentName]）。
+ * 桥接：默认注入 PI_SUBAGENT_* 桥接环境变量（extraEnv 传入的变量优先保留）。
  *
  * @param agentName 对应 ~/.pi/agent/agents/{name}.md
- * @param visible   true=在 tmux 窗格中可见运行（默认），false=后台运行
+ * @param visible   true=在 tmux/WezTerm 窗格中可见运行（默认），false=后台运行
  */
 export async function runSubagent(
 	agentName: string,
@@ -65,13 +79,21 @@ export async function runSubagent(
 ): Promise<SubagentResult> {
 	const agentDef = loadAgentDef(agentName, cwd);
 	if (!agentDef) {
-		throw new Error(`子代理定义 "${agentName}" 未找到。请确保 ~/.pi/agent/agents/${agentName}.md 文件存在。`);
+		throw new Error(`子代理定义 "${agentName}" 未找到。请确保 ${agentName}.md 在 ~/.pi/agent/agents/、~/.agents/agents/ 或项目级 .pi/agents/ 中存在。`);
 	}
+
+	// 超时单点解析：显式传参 > agentTimeouts > timeoutMs > fallback
+	const effectiveTimeout = resolveSubagentTimeout(agentName, cwd, timeoutMs);
 
 	// 自动解析当前会话文件路径，用于建立 parentSession 关联
 	const parentSessionPath = _sessionFileResolver?.();
 
-	const useVisible = visible && !!process.env.TMUX;
+	// 桥接环境变量：默认注入，调用方 extraEnv 优先
+	const orchestratorName = await resolveOrchestratorName();
+	const bridgeEnv = buildIntercomBridge(orchestratorName, agentName);
+	const env = { ...bridgeEnv, ...extraEnv };
+
+	const useVisible = visible && !!(process.env.TMUX || process.env.WEZTERM_PANE);
 
 	const tmpPromptPath = await writeTempPrompt(agentDef.systemPrompt);
 
@@ -87,8 +109,8 @@ export async function runSubagent(
 				: `${fullTask}\n\n---\n\n⚠️ 你上一轮的输出不符合格式约束：\n${validateOutputConstraints(lastResult!.output, outputConstraints!).join("\n")}\n\n请修正格式后重新输出完整的审查结果。不要重复工具调用，直接输出修正后的文本。`;
 
 			const result = useVisible
-				? await spawnVisible(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent, parentSessionPath, extraEnv)
-				: await spawnOnce(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, timeoutMs, onEvent, parentSessionPath, extraEnv);
+				? await spawnVisible(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, effectiveTimeout, onEvent, parentSessionPath, env)
+				: await spawnOnce(taskForAttempt, cwd, tmpPromptPath, agentDef, signal, modelOverride, effectiveTimeout, onEvent, parentSessionPath, env);
 			lastResult = result;
 
 			// 后台模式：子进程退出后通过 sessionId 查找 session 文件并注入 parentSession
