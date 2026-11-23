@@ -154,3 +154,46 @@ describe("barrel 导出防回归", () => {
 		expect(typeof wfBarrel.restoreSubagentModel).toBe("function");
 	});
 });
+
+describe("persist 失败留痕护栏（harden-subagent-model-observability D2/D4）", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		setSubagentModelRestored(false);
+	});
+
+	it("留痕传原始错误对象（stack/cause 不剥离）", () => {
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const boom = new Error("lock contention", { cause: new Error("ENOENT") });
+		patchMock.mockImplementation(() => {
+			throw boom;
+		});
+		setSubagentModel("zai-coding-cn/glm-5.4");
+		expect(errSpy).toHaveBeenCalledTimes(1);
+		// 第二参数必须是原 Error 对象（含 stack/cause），不是 e.message 字符串
+		expect(errSpy).toHaveBeenCalledWith(
+			"[subagent-model] persist 失败:",
+			boom,
+		);
+		errSpy.mockRestore();
+	});
+
+	it("留痕回退被拦截：静默吞时本用例变红（护栏）", () => {
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		patchMock.mockImplementation(() => {
+			throw new Error("boom");
+		});
+		setSubagentModel("zai-coding-cn/glm-5.4");
+		// 若 catch 改回静默吞，这里的 toHaveBeenCalledTimes(1) 失败 → 回归可见
+		expect(errSpy).toHaveBeenCalledTimes(1);
+		errSpy.mockRestore();
+	});
+
+	it("越界防御：labels 短于 items 时按索引取值（D4）", () => {
+		expect(
+			resolveSelectedByLabel(["a"], [{ v: 1 }, { v: 2 }], "a"),
+		).toEqual({ v: 1 });
+		expect(
+			resolveSelectedByLabel(["a", "b", "c"], [{ v: 1 }], "c"),
+		).toBeUndefined();
+	});
+});

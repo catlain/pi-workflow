@@ -54,11 +54,9 @@ function persistModelToSettings(model: string): void {
 			SUBAGENT_MODEL_DEFAULTS,
 		);
 	} catch (e) {
-		// 写入失败不阻塞主流程，但必须留痕（静默吞错曾致持久化失败不可观测，fix-subagent-model-select-persist D3）
-		console.error(
-			"[subagent-model] persist 失败:",
-			e instanceof Error ? e.message : e,
-		);
+		// 写入失败不阻塞主流程，但必须留痕（静默吞错曾致持久化失败不可观测，fix-subagent-model-select-persist D3）。
+		// 直接传 e 保留 stack 与 Error.cause 链（harden-subagent-model-observability D1）
+		console.error("[subagent-model] persist 失败:", e);
 	}
 }
 
