@@ -53,9 +53,29 @@ function persistModelToSettings(model: string): void {
 			{ defaultModel: model },
 			SUBAGENT_MODEL_DEFAULTS,
 		);
-	} catch {
-		// 写入失败不阻塞主流程
+	} catch (e) {
+		// 写入失败不阻塞主流程，但必须留痕（静默吞错曾致持久化失败不可观测，fix-subagent-model-select-persist D3）
+		console.error(
+			"[subagent-model] persist 失败:",
+			e instanceof Error ? e.message : e,
+		);
 	}
+}
+
+/**
+ * 选择器回查：labels 与 displayItems 同序一一构建，按精确索引映射。
+ *
+ * 禁止 `choice.includes(item.value)` 子串匹配：候选含互为前缀的模型 ID
+ * （如 glm-5.3 / glm-5.3-flash）时，"…glm-5.3-flash…".includes("…glm-5.3")
+ * 恒为 true 且短 ID 字母序靠前，find 永远先命中它（fix-subagent-model-select-persist D1）。
+ */
+export function resolveSelectedByLabel<T>(
+	labels: string[],
+	items: T[],
+	choice: string,
+): T | undefined {
+	const idx = labels.indexOf(choice);
+	return idx >= 0 && idx < items.length ? items[idx] : undefined;
 }
 
 export function getSubagentModel(): string {

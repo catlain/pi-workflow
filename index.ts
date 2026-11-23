@@ -25,6 +25,7 @@ export {
 	isSubagentModelRestored,
 	setSubagentModelRestored,
 	restoreSubagentModel,
+	resolveSelectedByLabel,
 } from "./subagent-model";
 export { createSubagentWidget } from "./widget";
 export { saveSubagentOutput, readSubagentOutput } from "./output";
