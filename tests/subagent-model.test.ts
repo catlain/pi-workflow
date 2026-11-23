@@ -4,7 +4,7 @@
  * 读：getEffectiveConfig 三层合并；写：patchSettingsSectionWithBackup
  * 禁止裸 readFileSync/writeFileSync 整文件读写。
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const { patchMock } = vi.hoisted(() => ({
 	patchMock: vi.fn(),
@@ -157,35 +157,37 @@ describe("barrel 导出防回归", () => {
 
 describe("persist 失败留痕护栏（harden-subagent-model-observability D2/D4）", () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
+		// resetAllMocks 清除 implementation（含上 describe 残留的 throw），避免埋雷式跨界污染
+		vi.resetAllMocks();
+		vi.spyOn(console, "error").mockImplementation(() => {});
 		setSubagentModelRestored(false);
+	});
+	afterEach(() => {
+		// 统一恢复 spy：断言失败时也不泄漏全局 mock（mockRestore 不在断言成功路径上）
+		vi.restoreAllMocks();
 	});
 
 	it("留痕传原始错误对象（stack/cause 不剥离）", () => {
-		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		const boom = new Error("lock contention", { cause: new Error("ENOENT") });
 		patchMock.mockImplementation(() => {
 			throw boom;
 		});
 		setSubagentModel("zai-coding-cn/glm-5.4");
-		expect(errSpy).toHaveBeenCalledTimes(1);
+		expect(console.error).toHaveBeenCalledTimes(1);
 		// 第二参数必须是原 Error 对象（含 stack/cause），不是 e.message 字符串
-		expect(errSpy).toHaveBeenCalledWith(
+		expect(console.error).toHaveBeenCalledWith(
 			"[subagent-model] persist 失败:",
 			boom,
 		);
-		errSpy.mockRestore();
 	});
 
 	it("留痕回退被拦截：静默吞时本用例变红（护栏）", () => {
-		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		patchMock.mockImplementation(() => {
 			throw new Error("boom");
 		});
 		setSubagentModel("zai-coding-cn/glm-5.4");
 		// 若 catch 改回静默吞，这里的 toHaveBeenCalledTimes(1) 失败 → 回归可见
-		expect(errSpy).toHaveBeenCalledTimes(1);
-		errSpy.mockRestore();
+		expect(console.error).toHaveBeenCalledTimes(1);
 	});
 
 	it("越界防御：labels 短于 items 时按索引取值（D4）", () => {
