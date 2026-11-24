@@ -165,7 +165,7 @@ export function createVisibleTaskDir(
 		`export PI_SUBAGENT_SESSION='${uSessionFile}'`,
 		`export PI_SUBAGENT_NAME='pv-visible'`,
 		extraEnvExports,
-		`pi --session '${uSessionFile}' --tools ${agentDef.tools.join(",")} --append-system-prompt '${uSystemPromptPath}'${modelArg} @'${uTaskFile}'`,
+		`exec pi --session '${uSessionFile}' --tools ${agentDef.tools.join(",")} --append-system-prompt '${uSystemPromptPath}'${modelArg} @'${uTaskFile}'`,
 	].filter(Boolean).join("\n");
 	fs.writeFileSync(launchScript, script, { mode: 0o700 });
 

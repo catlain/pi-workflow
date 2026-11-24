@@ -19,6 +19,10 @@ import { createVisibleTaskDir, injectParentSession } from "./subagent-utils";
 import { detectTerminal, getBackend } from "./term-backend";
 import type { TermBackend } from "./term-backend";
 import { createSafeCleanup } from "./visible-cleanup";
+import { DEFAULT_SUBAGENT_TIMEOUT_MS } from "./timeout-config";
+
+/** 活跃超时：无新输出视为停滞的阈值（与 subagent-spawn-once 的 STALL_MS 语义对齐） */
+const STALL_TIMEOUT_MS = 5 * 60 * 1000;
 
 export function spawnVisible(
 	task: string,
@@ -81,27 +85,28 @@ export function spawnVisible(
 		const pollInterval = setInterval(() => {
 			if (agentSession.isDone) return;
 
-			// 读取新行并解析
+			// 读取新行并解析（半行不推进：写侧未写完的行留给下一轮重读，防止行丢失）
 			try {
 				if (fs.existsSync(sessionFile)) {
 					const content = fs.readFileSync(sessionFile, "utf-8");
 					const lines = content.split("\n").filter((l) => l.trim());
-					if (lines.length > lastLine) lastActivityTime = Date.now();
-					for (let i = lastLine; i < lines.length; i++) {
+					const completeCount = content.endsWith("\n") ? lines.length : Math.max(0, lines.length - 1);
+					if (completeCount > lastLine) lastActivityTime = Date.now();
+					for (let i = lastLine; i < completeCount; i++) {
 						try { agentSession.parseSessionLine(JSON.parse(lines[i])); } catch { /* skip */ }
 					}
-					lastLine = lines.length;
+					lastLine = completeCount;
 				}
 			} catch { /* ignore */ }
 
 			// 检查 pane 是否存活
-			if (!backend.isPaneAlive(paneId)) finish();
+			if (!backend.isPaneAlive(paneId)) void finish();
 
-			// 活跃超时：5 分钟无新输出视为停滞
-			if (Date.now() - lastActivityTime > 5 * 60 * 1000) {
+			// 活跃超时：STALL_TIMEOUT_MS 无新输出视为停滞
+			if (Date.now() - lastActivityTime > STALL_TIMEOUT_MS) {
 				agentSession.resolveOnce({
 					exitCode: 1,
-					output: agentSession.formatOutput("(stalled, no output for 5 min)"),
+					output: agentSession.formatOutput(`(stalled, no output for ${Math.round(STALL_TIMEOUT_MS / 60000)} min)`),
 					stderr: "",
 					timedOut: true,
 				});
@@ -113,7 +118,7 @@ export function spawnVisible(
 
 		// ─── 墙钟超时兜底 ─────────────────────
 
-		const TIMEOUT_MS = timeoutMs ?? 30 * 60 * 1000;
+		const TIMEOUT_MS = timeoutMs ?? DEFAULT_SUBAGENT_TIMEOUT_MS;
 		const wallTimer = setTimeout(() => {
 			agentSession.resolveOnce({
 				exitCode: 1,
@@ -127,15 +132,17 @@ export function spawnVisible(
 
 		// ─── 正常结束：收集剩余输出 ────────────
 
-		function finish() {
+		async function finish() {
 			if (agentSession.isDone) return;
 
-			try { execSync("sleep 0.5", { stdio: "pipe" }); } catch { /* ignore */ }
+			// 等子代理尾部刷盘（跨平台：sleep 命令在非 MSYS2 环境不可用）
+			await new Promise((r) => setTimeout(r, 500));
 			try {
 				if (fs.existsSync(sessionFile)) {
 					const content = fs.readFileSync(sessionFile, "utf-8");
 					const lines = content.split("\n").filter((l) => l.trim());
-					for (let i = lastLine; i < lines.length; i++) {
+					const completeCount = content.endsWith("\n") ? lines.length : Math.max(0, lines.length - 1);
+					for (let i = lastLine; i < completeCount; i++) {
 						try { agentSession.parseSessionLine(JSON.parse(lines[i])); } catch { /* skip */ }
 					}
 				}

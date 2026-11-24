@@ -69,10 +69,10 @@ export function isPidAlive(pid: number, executor: ProcGuardExecutor = defaultExe
 	if (pid <= 0) return false;
 	if (process.platform === "win32") {
 		const out = executor.run("tasklist", ["/FI", `PID eq ${pid}`, "/NH"]);
-		if (out === null) return true;
-		// tasklist 过滤无匹配时输出 "INFO: No tasks are running..." 且退出码 0，
-		// 必须按 stdout 是否包含 pid 判定，不能依赖退出码
-		return out.includes(String(pid));
+		if (out === null) return true; // 探测失败按存活处理（fail-safe：不误删）
+		// tasklist /NH 数据行格式：imagename  pid  session  session#  mem
+		// 按第二列精确匹配，防内存列数字子串误判（如 "22,222 K" 含 "222"）
+		return out.split("\n").some((line) => (line.trim().split(/\s+/)[1] ?? "") === String(pid));
 	}
 	try {
 		process.kill(pid, 0);
@@ -144,6 +144,9 @@ export function sweepStaleVisibleTaskDirs(
 			const dir = path.join(tmpRoot, name);
 			try {
 				if (!isStaleVisibleTaskDir(dir, maxAgeMs)) continue;
+				// 死透检查：主进程崩溃后子代理可能仍活着（罕见但存在）——跳过本轮，下轮 sweep 再试
+				const pid = resolvePlatformPid(readProcPid(dir));
+				if (pid !== null && isPidAlive(pid)) continue;
 				fs.rmSync(dir, { recursive: true, force: true });
 			} catch { /* 单目录失败容错 */ }
 		}

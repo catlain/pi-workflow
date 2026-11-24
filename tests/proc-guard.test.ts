@@ -93,6 +93,11 @@ describe("isPidAlive（win32 分支）", () => {
 		const ex = makeExecutor("INFO: No tasks are running which match the specified criteria.");
 		expect(isPidAlive(1234, ex)).toBe(false);
 	});
+	// W4 修复防护：列解析防内存列数字子串误判（旧 includes 会匹配 "22,222" 里的 "222"）
+	it("pid 仅出现在内存列（非第二列）不误判存活", () => {
+		const ex = makeExecutor("bar.exe  990 Console 1 22,222 K");
+		expect(isPidAlive(222, ex)).toBe(false);
+	});
 	it("探测命令失败（null）fail-safe 判活", () => {
 		const ex = makeExecutor(null);
 		expect(isPidAlive(1234, ex)).toBe(true);

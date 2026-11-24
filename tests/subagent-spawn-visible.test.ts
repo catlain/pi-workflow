@@ -5,6 +5,7 @@
  * 终端不可用 fallback / pane 消失后读取结果 / 超时 / abort。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { SubagentSession } from "../subagent-session";
 
 vi.mock("../subagent-utils", () => ({
 	getPiCommand: vi.fn(() => ({ command: "node", args: ["/usr/local/bin/pi"] })),
@@ -119,6 +120,29 @@ describe("spawnVisible", () => {
 		expect(result.output).toContain("hello");
 		// 正常结束路径：finish 后走 safeCleanup(kill=false)（等死透后删目录，不主动杀）
 		expect(safeCleanupMock).toHaveBeenCalledWith(false);
+	});
+
+	// C1 修复防护：半行推进丢行反例——写侧未写完的行不解析、不丢失
+	it("半行不推进：未写完的行留到下一轮补读", async () => {
+		backendMock.isPaneAlive.mockReturnValue(true);
+		fsMock.existsSync.mockReturnValue(true);
+		// 第一轮：尾行是半行（无换行符）
+		fsMock.readFileSync.mockReturnValueOnce('{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"first"}]}}\n{"type":"par');
+		const parseSpy = vi.spyOn(SubagentSession.prototype, "parseSessionLine");
+		const resultPromise = spawnVisible("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] });
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(parseSpy).toHaveBeenCalledTimes(1); // 只有完整行被解析
+		// 第二轮：写侧补全了第二行
+		fsMock.readFileSync.mockReturnValueOnce('{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"first"}]}}\n{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"second"}]}}\n');
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(parseSpy).toHaveBeenCalledTimes(2);
+		// 收尾：pane 消失走 finish
+		backendMock.isPaneAlive.mockReturnValue(false);
+		fsMock.readFileSync.mockReturnValue('{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"second"}]}}\n');
+		await vi.advanceTimersByTimeAsync(5000);
+		const result = await resultPromise;
+		expect(result.output).toContain("second");
+		parseSpy.mockRestore();
 	});
 
 	it("超时时返回 timedOut 并清理 pane", async () => {

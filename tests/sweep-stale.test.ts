@@ -63,6 +63,21 @@ describe("sweepStaleVisibleTaskDirs", () => {
 		} finally { fs.rmSync(root, { recursive: true, force: true }); }
 	});
 
+	// 存活的目录跳过（死透检查）——修复反例：C2 sweep 违反自身不变量
+	it("proc.pid 指向活进程的超龄目录跳过不删", () => {
+		const root = mkRoot();
+		try {
+			const alive = path.join(root, "pi-visible-alive");
+			fs.mkdirSync(alive);
+			fs.writeFileSync(path.join(alive, "task.txt"), "x");
+			backdateTree(alive, STALE_VISIBLE_TASK_DIR_MS * 2);
+			// 假装该目录属于当前 vitest 进程（两平台语义位同填，必然存活）
+			fs.writeFileSync(path.join(alive, "proc.pid"), `${process.pid} ${process.pid}\n`);
+			sweepStaleVisibleTaskDirs(root);
+			expect(fs.existsSync(alive)).toBe(true);
+		} finally { fs.rmSync(root, { recursive: true, force: true }); }
+	});
+
 	it("非 pi-visible-* 前缀目录不触碰", () => {
 		const root = mkRoot();
 		try {
