@@ -20,6 +20,17 @@ vi.mock("../subagent-spawn-once", () => ({
 	spawnOnce: vi.fn(() => Promise.resolve({ exitCode: 0, output: "fallback", stderr: "" })),
 }));
 
+const { safeCleanupMock, createSafeCleanupMock } = vi.hoisted(() => ({
+	safeCleanupMock: vi.fn(() => Promise.resolve()),
+	createSafeCleanupMock: vi.fn((_opts: unknown) => null as any),
+}));
+vi.mock("../visible-cleanup", () => ({
+	createSafeCleanup: (opts: any) => {
+		createSafeCleanupMock(opts);
+		return safeCleanupMock;
+	},
+}));
+
 const { backendMock, termDetect } = vi.hoisted(() => {
 	const backend = {
 		splitPane: vi.fn(() => "%42"),
@@ -58,6 +69,7 @@ vi.mock("node:fs", async (importOriginal) => {
 import { spawnVisible } from "../subagent-spawn-visible";
 import { spawnOnce } from "../subagent-spawn-once";
 import { createVisibleTaskDir } from "../subagent-utils";
+import { createSafeCleanup } from "../visible-cleanup";
 
 describe("spawnVisible", () => {
 	beforeEach(() => {
@@ -66,6 +78,8 @@ describe("spawnVisible", () => {
 		backendMock.splitPane.mockReturnValue("%42");
 		backendMock.isPaneAlive.mockReturnValue(true);
 		backendMock.killPane.mockClear();
+		safeCleanupMock.mockClear();
+		createSafeCleanupMock.mockClear();
 		fsMock.existsSync.mockReturnValue(false);
 		fsMock.readFileSync.mockReturnValue("");
 	});
@@ -103,6 +117,8 @@ describe("spawnVisible", () => {
 
 		const result = await resultPromise;
 		expect(result.output).toContain("hello");
+		// 正常结束路径：finish 后走 safeCleanup(kill=false)（等死透后删目录，不主动杀）
+		expect(safeCleanupMock).toHaveBeenCalledWith(false);
 	});
 
 	it("超时时返回 timedOut 并清理 pane", async () => {
@@ -116,7 +132,12 @@ describe("spawnVisible", () => {
 
 		const result = await resultPromise;
 		expect(result.timedOut).toBe(true);
-		expect(backendMock.killPane).toHaveBeenCalledWith("%42");
+		// 有序清理：超时路径交由 safeCleanup(kill=true)（内部先 killPane 再等死透后删目录）
+		expect(safeCleanupMock).toHaveBeenCalledWith(true);
+		expect(createSafeCleanupMock).toHaveBeenCalledWith(expect.objectContaining({
+			taskDir: "/tmp/pi-visible-test",
+			paneId: "%42",
+		}));
 	});
 
 	it("signal abort 时终止并清理", async () => {
@@ -131,7 +152,7 @@ describe("spawnVisible", () => {
 		const result = await resultPromise;
 		expect(result.stderr).toContain("aborted");
 		expect(result.exitCode).toBe(1);
-		expect(backendMock.killPane).toHaveBeenCalled();
+		expect(safeCleanupMock).toHaveBeenCalledWith(true);
 	});
 
 	it("extraEnv 透传到 createVisibleTaskDir", async () => {

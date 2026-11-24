@@ -18,6 +18,7 @@ import { SubagentSession } from "./subagent-session";
 import { createVisibleTaskDir, injectParentSession } from "./subagent-utils";
 import { detectTerminal, getBackend } from "./term-backend";
 import type { TermBackend } from "./term-backend";
+import { createSafeCleanup } from "./visible-cleanup";
 
 export function spawnVisible(
 	task: string,
@@ -72,10 +73,8 @@ export function spawnVisible(
 		let lastLine = 0;
 		let lastActivityTime = Date.now();
 
-		const cleanup = () => {
-			backend.killPane(paneId);
-			try { fs.rmSync(taskDir, { recursive: true }); } catch { /* ignore */ }
-		};
+		// 有序安全清理：目录删除永不早于 pane 内进程树死透确认（实现见 visible-cleanup.ts）
+		const safeCleanup = createSafeCleanup({ taskDir, paneId, backend });
 
 		// ─── 轮询 session.jsonl ─────────────────
 
@@ -108,7 +107,7 @@ export function spawnVisible(
 				});
 				clearInterval(pollInterval);
 				clearTimeout(wallTimer);
-				cleanup();
+				void safeCleanup(true);
 			}
 		}, 2000);
 
@@ -123,7 +122,7 @@ export function spawnVisible(
 				timedOut: true,
 			});
 			clearInterval(pollInterval);
-			cleanup();
+			void safeCleanup(true);
 		}, TIMEOUT_MS);
 
 		// ─── 正常结束：收集剩余输出 ────────────
@@ -150,10 +149,9 @@ export function spawnVisible(
 			clearInterval(pollInterval);
 			clearTimeout(wallTimer);
 
-			// 延迟清理临时目录（让用户看到最终输出；pane 由自动退出机制自行结束）
-			setTimeout(() => {
-				try { fs.rmSync(taskDir, { recursive: true }); } catch { /* ignore */ }
-			}, 5000);
+			// 有序清理临时目录（等 pane 内进程死透后删除；pane 由自动退出机制自行结束，
+			// 死透等待期间用户仍可看到最终输出）
+			void safeCleanup(false);
 		}
 
 		// ─── AbortSignal ──────────────────────
@@ -168,7 +166,7 @@ export function spawnVisible(
 					});
 					clearInterval(pollInterval);
 					clearTimeout(wallTimer);
-					cleanup();
+					void safeCleanup(true);
 				}
 			};
 			if (signal.aborted) onAbort();

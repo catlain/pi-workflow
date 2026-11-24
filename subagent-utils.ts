@@ -5,6 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { sweepStaleVisibleTaskDirs } from "./proc-guard";
 
 /**
  * 将 Windows 反斜杠路径转为 Unix 正斜杠路径。
@@ -124,6 +125,8 @@ export function createVisibleTaskDir(
 	extraEnv?: Record<string, string>,
 ): VisibleTaskDir {
 	const taskDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-visible-"));
+	// 顺带清扫超龄残留（主进程意外退出导致清理回调丢失的目录）
+	sweepStaleVisibleTaskDirs();
 	const taskFile = path.join(taskDir, "task.txt");
 	fs.writeFileSync(taskFile, task, { encoding: "utf-8" });
 
@@ -147,9 +150,14 @@ export function createVisibleTaskDir(
 	const uSessionFile = toUnixPath(sessionFile);
 	const uSystemPromptPath = toUnixPath(systemPromptPath);
 	const uTaskFile = toUnixPath(taskFile);
+	const uProcPidFile = toUnixPath(path.join(taskDir, "proc.pid"));
 
 	const script = [
 		"#!/bin/bash",
+		// 进程身份自报：清理侧据此判定 pane 内进程死透（safe-cleanup-visible-subagent）
+		// $$ 为 shell pid；MSYS2/Git Bash 下经 /proc/$$/winpid 取 Windows 原生 pid，
+		// 非 MSYS2 环境回退 0（Unix 平台清理侧用 shell pid，winpid=0 不构成降级信号）
+		`echo "$$ $(cat /proc/$$/winpid 2>/dev/null || echo 0)" > '${uProcPidFile}' || true`,
 		'export FNM_PATH="$HOME/.local/share/fnm"',
 		'if [ -d "$FNM_PATH" ]; then export PATH="$FNM_PATH:$PATH" && eval "$(fnm env --shell bash)"; fi',
 		`cd "${uCwd}"`,
