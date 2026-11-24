@@ -26,7 +26,16 @@ vi.mock("node:child_process", async (importOriginal) => {
 	};
 });
 
-import { spawnOnce } from "../subagent-spawn-once";
+import { spawnOnce, JSONL_CROSS_CHECK_DELAY_MS } from "../subagent-spawn-once";
+
+/**
+ * 空占位形态的 close 路径会先等 JSONL_CROSS_CHECK_DELAY_MS（孤儿进程 jsonl 尾刷容忍窗）
+ * 再做 jsonl 交叉校验后 resolve——fake timers 下必须推进过等待窗 Promise 才会落定。
+ */
+async function emitCloseAndSettle(code: number): Promise<void> {
+	mockProc.emit("close", code);
+	await vi.advanceTimersByTimeAsync(JSONL_CROSS_CHECK_DELAY_MS);
+}
 
 function createMockProcess() {
 	const proc = new EventEmitter() as any;
@@ -69,7 +78,7 @@ describe("spawnOnce", () => {
 		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, onEvent);
 
 		mockProc.stdout.emit("data", Buffer.from('{"type":"tool_execution_start","toolName":"read"}\n'));
-		mockProc.emit("close", 0);
+		await emitCloseAndSettle(0);
 
 		await resultPromise;
 		expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "tool", toolName: "read" }));
@@ -80,7 +89,7 @@ describe("spawnOnce", () => {
 		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, onEvent);
 
 		mockProc.stdout.emit("data", Buffer.from('{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"thinking..."}}\n'));
-		mockProc.emit("close", 0);
+		await emitCloseAndSettle(0);
 
 		await resultPromise;
 		expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "thinking" }));
@@ -124,7 +133,8 @@ describe("spawnOnce", () => {
 	it("没有输出时返回 (no output)", async () => {
 		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] });
 
-		mockProc.emit("close", 0);
+		// 注：此形态现会额外注入 error（jsonl 交叉校验），断言见 subagent-spawn-once-jsonl-crosscheck.test.ts
+		await emitCloseAndSettle(0);
 
 		const result = await resultPromise;
 		expect(result.output).toBe("(no output)");
@@ -133,7 +143,7 @@ describe("spawnOnce", () => {
 	it("model override 传递给 pi 命令", async () => {
 		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, "gpt-4");
 
-		mockProc.emit("close", 0);
+		await emitCloseAndSettle(0);
 		await resultPromise;
 
 		const args = spawnCalls[0][1];
@@ -144,7 +154,7 @@ describe("spawnOnce", () => {
 	it("agentDef.model 作为默认 model", async () => {
 		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"], model: "claude-3" });
 
-		mockProc.emit("close", 0);
+		await emitCloseAndSettle(0);
 		await resultPromise;
 
 		const args = spawnCalls[0][1];

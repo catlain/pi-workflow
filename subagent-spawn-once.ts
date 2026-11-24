@@ -9,6 +9,14 @@ import { spawn } from "node:child_process";
 import { SubagentSession } from "./subagent-session";
 import type { SubagentEvent, SubagentResult } from "./types";
 import { getPiCommand } from "./subagent-utils";
+import { crossCheckOnceSessionJsonl } from "./subagent-jsonl-signal";
+
+/**
+ * 空占位形态下 jsonl 交叉校验前的等待——孤儿进程 jsonl 尾刷容忍窗
+ * （与 visible 模式 finish 尾刷同款常数；spec: subagent-spawn-runtime）。
+ * 导出仅供测试推进 fake timers 时引用，不进 barrel。
+ */
+export const JSONL_CROSS_CHECK_DELAY_MS = 500;
 
 export function spawnOnce(
 	task: string,
@@ -126,11 +134,29 @@ export function spawnOnce(
 				if (!line.trim()) continue;
 				try { session.parseStreamEvent(JSON.parse(line)); } catch { /* skip */ }
 			}
-			session.resolveOnce({
-				exitCode: code ?? 1,
-				output: session.formatOutput("(no output)"),
-				stderr,
-			});
+			const exitCode = code ?? 1;
+			const output = session.formatOutput("(no output)");
+
+			// 正常路径（有 assistant 文本）零变化：立即返回，不等待、不交叉校验。
+			// 触发条件取「未收集到任何文本」而非 isEmptyPlaceholderOutput 的包含匹配，
+			// 避免正文里恰好含占位字面量的真实输出被误判。
+			if (session.formatOutput("").trim() !== "") {
+				session.resolveOnce({ exitCode, output, stderr });
+				return;
+			}
+
+			// 空占位形态 → once 模式信号源=jsonl 交叉校验（spec: subagent-spawn-runtime）。
+			// 先等 JSONL_CROSS_CHECK_DELAY_MS（bash 异常退出时 pi 孤儿进程尚在跑、jsonl 未刷盘的窗口），
+			// 再按 capturedSessionId 定位子会话文件判定；注入 error 后由 runSubagent 归系统性失败档（不重试）。
+			setTimeout(() => {
+				if (session.isDone) return; // 等待窗内已被 abort / 超时先行 resolve
+				session.resolveOnce({
+					exitCode,
+					output,
+					stderr,
+					error: crossCheckOnceSessionJsonl(session.capturedSessionId, cwd, code, stderr),
+				});
+			}, JSONL_CROSS_CHECK_DELAY_MS);
 		});
 
 		proc.on("error", (err) => {

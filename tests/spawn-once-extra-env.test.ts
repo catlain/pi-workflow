@@ -23,7 +23,13 @@ vi.mock("node:child_process", async (importOriginal) => {
 	};
 });
 
-import { spawnOnce } from "../subagent-spawn-once";
+import { spawnOnce, JSONL_CROSS_CHECK_DELAY_MS } from "../subagent-spawn-once";
+
+/** 空占位 close 路径先等 JSONL_CROSS_CHECK_DELAY_MS 再 jsonl 交叉校验——fake timers 需推进过等待窗 */
+async function emitCloseAndSettle(code: number): Promise<void> {
+	mockProc.emit("close", code);
+	await vi.advanceTimersByTimeAsync(JSONL_CROSS_CHECK_DELAY_MS);
+}
 
 function createMockProcess() {
 	const proc = new EventEmitter() as any;
@@ -47,7 +53,7 @@ describe("spawnOnce — extraEnv 透传", () => {
 
 	it("不传 extraEnv 时 spawn env 为 process.env", async () => {
 		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] });
-		mockProc.emit("close", 0);
+		await emitCloseAndSettle(0);
 		await resultPromise;
 
 		const spawnOpts = spawnCalls[0][2];
@@ -62,7 +68,7 @@ describe("spawnOnce — extraEnv 透传", () => {
 			PI_SUBAGENT_CHILD_INDEX: "1",
 		};
 		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, undefined, extraEnv);
-		mockProc.emit("close", 0);
+		await emitCloseAndSettle(0);
 		await resultPromise;
 
 		const spawnOpts = spawnCalls[0][2];
@@ -78,7 +84,7 @@ describe("spawnOnce — extraEnv 透传", () => {
 	it("extraEnv 的值覆盖 process.env 中同名 key", async () => {
 		const extraEnv = { PATH: "/custom/path" };
 		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, undefined, extraEnv);
-		mockProc.emit("close", 0);
+		await emitCloseAndSettle(0);
 		await resultPromise;
 
 		const spawnOpts = spawnCalls[0][2];
@@ -87,7 +93,7 @@ describe("spawnOnce — extraEnv 透传", () => {
 
 	it("extraEnv 为空对象时仍包含 process.env", async () => {
 		const resultPromise = spawnOnce("task", "/cwd", "/tmp/prompt.md", { tools: ["read"] }, undefined, undefined, undefined, undefined, undefined, {});
-		mockProc.emit("close", 0);
+		await emitCloseAndSettle(0);
 		await resultPromise;
 
 		const spawnOpts = spawnCalls[0][2];

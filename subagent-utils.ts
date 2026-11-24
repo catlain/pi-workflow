@@ -36,19 +36,27 @@ export function injectParentSession(sessionFilePath: string, parentPath: string)
 }
 
 /**
- * 通过 sessionId 查找子代理 session 文件并注入 parentSession。
- * 用于 spawnOnce 模式（session 文件路径未知，需要按 ID 搜索）。
+ * 通过 sessionId 查找子代理 session 文件路径（只读定位，无副作用）。
+ * 路径推导：PI_CODING_AGENT_SESSION_DIR ∨ ~/.pi/agent/sessions + cwd slug 子目录
+ * + 首行 header.id 匹配（按修改时间降序，只查最近 20 个 .jsonl）。
+ *
+ * 从 findAndInjectParentSession 抽出（opsx-subarch-cmds-late 7.1），
+ * 供 spawnOnce close 分支的 jsonl 交叉校验复用；路径推导逻辑零变化。
+ *
+ * @returns 命中返回 session 文件路径；未命中（sessionId 空 / 目录缺失 / 无匹配）返回 undefined
  */
-export function findAndInjectParentSession(sessionId: string | undefined, parentPath: string, cwd: string): void {
-	if (!sessionId || !parentPath) return;
+export function findSessionFileById(sessionId: string | undefined, cwd: string): string | undefined {
+	if (!sessionId) return undefined;
 	const baseDir = process.env.PI_CODING_AGENT_SESSION_DIR
 		|| path.join(os.homedir(), ".pi/agent/sessions");
 	if (!fs.existsSync(baseDir)) return;
 
-	// 从 cwd 推导 session 子目录
-	const cwdSlug = "--" + cwd.replace(/^\//, "").replace(/\//g, "-") + "--";
+	// 从 cwd 推导 session 子目录——与 pi SDK session-manager 的 slug 公式逐字一致
+	// （去掉单个前导分隔符；其余 / 与 \ 与盘符冒号全部换成 -）。只替换 / 时 Windows 盘符
+	// 冒号残留 → 永远定位不到 pi 实际写入的目录（findAndInjectParentSession 曾因此在 Windows 静默空转）。
+	const cwdSlug = "--" + cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-") + "--";
 	const sessionDir = path.join(baseDir, cwdSlug);
-	if (!fs.existsSync(sessionDir)) return;
+	if (!fs.existsSync(sessionDir)) return undefined;
 
 	try {
 		// 按修改时间降序，优先检查最近的文件
@@ -67,13 +75,22 @@ export function findAndInjectParentSession(sessionId: string | undefined, parent
 				fs.closeSync(fd);
 				const firstLine = buf.toString("utf-8").split("\n")[0];
 				const header = JSON.parse(firstLine);
-				if (header.id === sessionId) {
-					injectParentSession(filePath, parentPath);
-					return;
-				}
+				if (header.id === sessionId) return filePath;
 			} catch { /* skip */ }
 		}
 	} catch { /* skip */ }
+	return undefined;
+}
+
+/**
+ * 通过 sessionId 查找子代理 session 文件并注入 parentSession。
+ * 用于 spawnOnce 模式（session 文件路径未知，需要按 ID 搜索）。
+ * 定位委托 findSessionFileById（抽取后本调用方行为零变化）。
+ */
+export function findAndInjectParentSession(sessionId: string | undefined, parentPath: string, cwd: string): void {
+	if (!sessionId || !parentPath) return;
+	const filePath = findSessionFileById(sessionId, cwd);
+	if (filePath) injectParentSession(filePath, parentPath);
 }
 
 /**
