@@ -22,6 +22,7 @@ import {
 	buildIntercomBridge,
 	resolveOrchestratorName,
 } from "./intercom-bridge";
+import { isSystemicSubagentFailure, buildSystemicFailureResult } from "./utils";
 
 /** 模块级 session 文件解析器，由各扩展在 session_start 时注册 */
 let _sessionFileResolver: (() => string | undefined) | undefined;
@@ -116,6 +117,13 @@ export async function runSubagent(
 			// 后台模式：子进程退出后通过 sessionId 查找 session 文件并注入 parentSession
 			if (!useVisible && parentSessionPath && result.subSessionId) {
 				findAndInjectParentSession(result.subSessionId, parentSessionPath, cwd);
+			}
+
+			// 系统性失败（error 字段 / timedOut / 空占位输出兼 stderr 非空，含 visible jsonl 终结形态信号）：
+			// spawn 层阵亡，重试无效——组装失败档（error 必填 + stderr 尾部透出）直接返回，不消耗重试次数
+			if (isSystemicSubagentFailure(result)) {
+				lastResult = buildSystemicFailureResult(result);
+				break;
 			}
 
 			if (!outputConstraints?.length) break;

@@ -66,8 +66,13 @@ describe("spawnOnce — extraEnv 透传", () => {
 		await resultPromise;
 
 		const spawnOpts = spawnCalls[0][2];
+		// 语义修正（2026-11-24）：spawn env = process.env ∪ extraEnv，同名键以 extraEnv 为准。
+		// 旧断言 objectContaining(process.env) 在键重叠时自相矛盾（子代理环境跑测试必红）。
+		const nonOverlapEnv = Object.fromEntries(
+			Object.entries(process.env).filter(([k]) => !(k in extraEnv)),
+		);
 		expect(spawnOpts.env).toEqual(expect.objectContaining(extraEnv));
-		expect(spawnOpts.env).toEqual(expect.objectContaining(process.env));
+		expect(spawnOpts.env).toEqual(expect.objectContaining(nonOverlapEnv));
 	});
 
 	it("extraEnv 的值覆盖 process.env 中同名 key", async () => {

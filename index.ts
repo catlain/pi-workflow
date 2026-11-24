@@ -32,7 +32,8 @@ export { saveSubagentOutput, readSubagentOutput } from "./output";
 export type { SubagentResult, SubagentEvent } from "./types";
 export { createStateManager, createUIUpdater } from "./state";
 export { registerWorkflowTool, type ActionDef } from "./workflow";
-export { findSessionFile, getSubagentStatusSummary, isSubagentSuccess } from "./utils";
+export { findSessionFile, getSubagentStatusSummary, isSubagentSuccess, isSystemicSubagentFailure, buildSystemicFailureResult, isEmptyPlaceholderOutput, EMPTY_OUTPUT_PLACEHOLDERS } from "./utils";
+export { checkSessionJsonlTermination } from "./subagent-jsonl-signal";
 export { discoverAgents, getAgentDescription } from "./agents";
 export { AGENT_DIR, AGENTS_DIR } from "./paths";
 

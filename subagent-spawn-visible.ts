@@ -16,6 +16,7 @@ import type { SubagentEvent, SubagentResult } from "./types";
 import { spawnOnce } from "./subagent-spawn-once";
 import { SubagentSession } from "./subagent-session";
 import { createVisibleTaskDir, injectParentSession } from "./subagent-utils";
+import { checkSessionJsonlTermination } from "./subagent-jsonl-signal";
 import { detectTerminal, getBackend } from "./term-backend";
 import type { TermBackend } from "./term-backend";
 import { createSafeCleanup } from "./visible-cleanup";
@@ -148,10 +149,15 @@ export function spawnVisible(
 				}
 			} catch { /* ignore */ }
 
+			// visible 模式失败信号源：jsonl 终结形态（stderr 无数据源，见 checkSessionJsonlTermination 注释）。
+			// 异常时 error 注入信号源说明，由 runSubagent 分类为系统性失败档（跳过重试+报错透出）；
+			// jsonl 正常终结但输出空 → 不注入，回落现状路径（正常完成零输出档）。
+			const jsonlSignal = checkSessionJsonlTermination(sessionFile);
 			agentSession.resolveOnce({
 				exitCode: 0,
 				output: agentSession.formatOutput("(no output)"),
 				stderr: "",
+				error: jsonlSignal.ok ? undefined : `visible 模式信号源=jsonl 终结形态：${jsonlSignal.reason}`,
 			});
 			clearInterval(pollInterval);
 			clearTimeout(wallTimer);
