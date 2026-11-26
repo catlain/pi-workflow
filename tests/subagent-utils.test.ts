@@ -17,8 +17,10 @@ import * as path from "node:path";
 
 // ---- mock fs.existsSync using a mutable flag ----
 let mockExistsResult = true;
+type FsModule = typeof import("node:fs");
+
 vi.mock("node:fs", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("node:fs")>();
+	const actual = await importOriginal<FsModule>();
 	return {
 		...actual,
 		existsSync: (p: string) => {
